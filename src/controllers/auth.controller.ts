@@ -13,8 +13,15 @@ export class AuthController {
   /**
    * Register new user
    */
-  async register(req: AuthRequest, res: Response<ApiResponse>): Promise<void> {
-    const { firstName, lastName, email, phone, password, role } = req.body;
+ async register(req: AuthRequest, res: Response<ApiResponse>): Promise<void> {
+    let { firstName, lastName, email, phone, password, role, fullName } = req.body;
+
+    // Support fullName field — split into firstName and lastName
+    if (fullName && (!firstName || !lastName)) {
+      const parts = fullName.trim().split(/\s+/);
+      firstName = parts[0];
+      lastName = parts.length > 1 ? parts.slice(1).join(' ') : parts[0];
+    }
 
     // Check if user exists
     const existingUser = await User.findOne({ email });
@@ -50,8 +57,7 @@ export class AuthController {
     }
 
     // Send OTP email
-
-    console.log(otpCode)
+    console.log(otpCode);
     await sendOTPEmail(email, otpCode);
 
     res.status(201).json({
@@ -63,7 +69,6 @@ export class AuthController {
       },
     });
   }
-
   /**
    * Verify email with OTP
    */

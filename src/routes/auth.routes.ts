@@ -9,11 +9,20 @@ import { validate } from '../middleware/validation';
 const router = Router();
 
 // Validation rules
+// Replace the registerValidation array
 const registerValidation = [
-  body('firstName').trim().notEmpty().withMessage('First name is required'),
-  body('lastName').trim().notEmpty().withMessage('Last name is required'),
+  body('firstName').optional().trim(),
+  body('lastName').optional().trim(),
+  body('fullName').optional().trim(),
   body('email').isEmail().withMessage('Valid email is required'),
   body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
+  body().custom((_, { req }) => {
+    const { firstName, lastName, fullName } = req.body;
+    if (!fullName && (!firstName || !lastName)) {
+      throw new Error('Either fullName or both firstName and lastName are required');
+    }
+    return true;
+  }),
 ];
 
 const loginValidation = [
