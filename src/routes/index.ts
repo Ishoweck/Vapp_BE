@@ -20,6 +20,7 @@ import uploadRoutes from './upload.routes';
 import accountDeletion from './account-deletion.routes'; 
 import webhookRoutes from './webhook.routes';
 import questionRoutes from "./question.routes"
+import disputeRoutes from "./dispute.routes"
 
 
 const router = Router();
@@ -45,6 +46,8 @@ router.use('/upload', uploadRoutes);
 router.use('/account-deletion', accountDeletion);
 router.use('/webhooks', webhookRoutes);
 router.use('/questions', questionRoutes);
+router.use('/disputes', disputeRoutes);
+
 
 
 

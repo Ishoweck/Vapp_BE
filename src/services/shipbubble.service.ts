@@ -1,4 +1,5 @@
 // services/shipbubble.service.ts
+// ✅ FIXED: Removed hardcoded service_type: 'pickup' to get ALL courier options
 import axios from 'axios';
 import { logger } from '../utils/logger';
 
@@ -35,7 +36,7 @@ interface PackageItem {
 
 interface FetchRatesRequest {
   sender_address_code: number;
-  reciever_address_code: number; // Note: ShipBubble uses 'reciever' (missing one 'e' and one 'i')
+  reciever_address_code: number; // Note: ShipBubble uses 'reciever' (their spelling)
   pickup_date: string; // format: "yyyy-mm-dd"
   category_id: number;
   package_items: PackageItem[];
@@ -166,223 +167,230 @@ export class ShipBubbleService {
 
   /**
    * Get delivery rates using ShipBubble's fetch_rates endpoint
+   * ✅ FIXED: Removed hardcoded service_type to get ALL courier types
    */
-async getDeliveryRates(
-  senderAddress: ShipBubbleAddress,
-  receiverAddress: ShipBubbleAddress,
-  packageItems: PackageItem[],
-  packageDimension?: { length: number; width: number; height: number },
-  categoryId?: number // Allow custom category
-) {
-  try {
-    logger.info('📦 ============================================');
-    logger.info('📦 FETCHING SHIPBUBBLE DELIVERY RATES');
-    logger.info('📦 ============================================');
-
-    // 🔍 LOG BOTH ADDRESSES BEFORE VALIDATION
-    logger.info('🔍 ================ SENDER ADDRESS ================');
-    logger.info('📤 Sender Details:', {
-      name: senderAddress.name,
-      email: senderAddress.email,
-      phone: senderAddress.phone,
-      address: senderAddress.address,
-      latitude: senderAddress.latitude,
-      longitude: senderAddress.longitude,
-    });
-
-    logger.info('🔍 ================ RECEIVER ADDRESS ================');
-    logger.info('📥 Receiver Details:', {
-      name: receiverAddress.name,
-      email: receiverAddress.email,
-      phone: receiverAddress.phone,
-      address: receiverAddress.address,
-      latitude: receiverAddress.latitude,
-      longitude: receiverAddress.longitude,
-    });
-
-    logger.info('🔍 ================================================');
-
-    // Step 1: Validate sender and receiver addresses
-    logger.info('🔄 Starting address validation...');
-    
-    let senderValidated: ValidatedAddress;
-    let receiverValidated: ValidatedAddress;
-
+  async getDeliveryRates(
+    senderAddress: ShipBubbleAddress,
+    receiverAddress: ShipBubbleAddress,
+    packageItems: PackageItem[],
+    packageDimension?: { length: number; width: number; height: number },
+    categoryId?: number // Allow custom category
+  ) {
     try {
-      logger.info('📍 Validating SENDER address...');
-      senderValidated = await this.validateAddress(senderAddress);
-      logger.info('✅ Sender validated:', senderValidated);
-    } catch (error: any) {
-      logger.error('❌ SENDER validation failed:', error.message);
-      throw error;
-    }
+      logger.info('📦 ============================================');
+      logger.info('📦 FETCHING SHIPBUBBLE DELIVERY RATES');
+      logger.info('📦 ============================================');
 
-    try {
-      logger.info('📍 Validating RECEIVER address...');
-      receiverValidated = await this.validateAddress(receiverAddress);
-      logger.info('✅ Receiver validated:', receiverValidated);
-    } catch (error: any) {
-      logger.error('❌ RECEIVER validation failed:', error.message);
-      throw error;
-    }
-
-    logger.info('✅ Both addresses validated:', {
-      senderCode: senderValidated.address_code,
-      receiverCode: receiverValidated.address_code,
-    });
-
-    // Step 2: Prepare pickup date (tomorrow)
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const pickupDate = tomorrow.toISOString().split('T')[0]; // yyyy-mm-dd
-
-    // Step 3: Determine category - use provided or default to Electronics and gadgets
-    const selectedCategoryId = categoryId || 77179563; // Default to Electronics and gadgets (77179563)
-
-    // Step 4: Fetch rates
-    const requestBody: FetchRatesRequest = {
-      sender_address_code: senderValidated.address_code,
-      reciever_address_code: receiverValidated.address_code, // Note: ShipBubble uses 'reciever' (their spelling)
-      pickup_date: pickupDate,
-      category_id: selectedCategoryId,
-      package_items: packageItems,
-      package_dimension: packageDimension || {
-        length: 20,
-        width: 20,
-        height: 20,
-      },
-      service_type: 'pickup',
-    };
-
-    logger.info('📡 ShipBubble fetch_rates request:', {
-      endpoint: `${SHIPBUBBLE_BASE_URL}/shipping/fetch_rates`,
-      senderAddressCode: senderValidated.address_code,
-      receiverAddressCode: receiverValidated.address_code,
-      pickupDate,
-      categoryId: selectedCategoryId,
-      itemCount: packageItems.length,
-    });
-    
-    logger.info('📤 Full request body:', JSON.stringify(requestBody, null, 2));
-
-    const response = await axios.post(
-      `${SHIPBUBBLE_BASE_URL}/shipping/fetch_rates`,
-      requestBody,
-      { headers: this.headers, timeout: 30000 }
-    );
-
-    logger.info('📥 ========================================');
-    logger.info('📥 SHIPBUBBLE RATES RESPONSE');
-    logger.info('📥 ========================================');
-    logger.info('📥 Status Code:', response.status);
-    logger.info('📥 Response Status:', response.data.status);
-    logger.info('📥 Response Message:', response.data.message);
-    logger.info('📥 Full Response Data:', JSON.stringify(response.data.data, null, 2));
-
-    if (response.data.data) {
-      logger.info('📥 Response Details:', {
-        requestToken: response.data.data.request_token,
-        courierCount: response.data.data.couriers?.length || 0,
-        hasCheapest: !!response.data.data.cheapest_courier,
-        hasFastest: !!response.data.data.fastest_courier,
+      logger.info('🔍 ================ SENDER ADDRESS ================');
+      logger.info('📤 Sender Details:', {
+        name: senderAddress.name,
+        email: senderAddress.email,
+        phone: senderAddress.phone,
+        address: senderAddress.address,
+        latitude: senderAddress.latitude,
+        longitude: senderAddress.longitude,
       });
 
-      if (response.data.data.couriers) {
-        logger.info('📦 Available Couriers:');
-        response.data.data.couriers.forEach((courier: any, index: number) => {
-          logger.info(`  ${index + 1}. ${courier.courier_name}:`, {
-            courier_id: courier.courier_id,
-            service_code: courier.service_code,
-            service_type: courier.service_type,
-            price: courier.total || courier.rate_card_amount,
-            eta: courier.delivery_eta,
+      logger.info('🔍 ================ RECEIVER ADDRESS ================');
+      logger.info('📥 Receiver Details:', {
+        name: receiverAddress.name,
+        email: receiverAddress.email,
+        phone: receiverAddress.phone,
+        address: receiverAddress.address,
+        latitude: receiverAddress.latitude,
+        longitude: receiverAddress.longitude,
+      });
+
+      logger.info('🔍 ================================================');
+
+      // Step 1: Validate sender and receiver addresses
+      logger.info('🔄 Starting address validation...');
+      
+      let senderValidated: ValidatedAddress;
+      let receiverValidated: ValidatedAddress;
+
+      try {
+        logger.info('📍 Validating SENDER address...');
+        senderValidated = await this.validateAddress(senderAddress);
+        logger.info('✅ Sender validated:', senderValidated);
+      } catch (error: any) {
+        logger.error('❌ SENDER validation failed:', error.message);
+        throw error;
+      }
+
+      try {
+        logger.info('📍 Validating RECEIVER address...');
+        receiverValidated = await this.validateAddress(receiverAddress);
+        logger.info('✅ Receiver validated:', receiverValidated);
+      } catch (error: any) {
+        logger.error('❌ RECEIVER validation failed:', error.message);
+        throw error;
+      }
+
+      logger.info('✅ Both addresses validated:', {
+        senderCode: senderValidated.address_code,
+        receiverCode: receiverValidated.address_code,
+      });
+
+      // Step 2: Prepare pickup date (tomorrow)
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const pickupDate = tomorrow.toISOString().split('T')[0]; // yyyy-mm-dd
+
+      // Step 3: Determine category - use provided or default to Electronics and gadgets
+      const selectedCategoryId = categoryId || 77179563;
+
+      // Step 4: Fetch rates
+      // ✅ FIX: Do NOT hardcode service_type — let ShipBubble return ALL courier types
+      //         Previously had `service_type: 'pickup'` which filtered out dropoff-only couriers
+      const requestBody: FetchRatesRequest = {
+        sender_address_code: senderValidated.address_code,
+        reciever_address_code: receiverValidated.address_code,
+        pickup_date: pickupDate,
+        category_id: selectedCategoryId,
+        package_items: packageItems,
+        package_dimension: packageDimension || {
+          length: 20,
+          width: 20,
+          height: 20,
+        },
+        // ✅ REMOVED: service_type: 'pickup'
+        // Without service_type, ShipBubble returns ALL available couriers
+        // (both pickup and dropoff) for the route, giving users more options
+      };
+
+      logger.info('📡 ShipBubble fetch_rates request:', {
+        endpoint: `${SHIPBUBBLE_BASE_URL}/shipping/fetch_rates`,
+        senderAddressCode: senderValidated.address_code,
+        receiverAddressCode: receiverValidated.address_code,
+        pickupDate,
+        categoryId: selectedCategoryId,
+        itemCount: packageItems.length,
+        packageItems: packageItems,
+      });
+      
+      logger.info('📤 Full request body:', JSON.stringify(requestBody, null, 2));
+
+      const response = await axios.post(
+        `${SHIPBUBBLE_BASE_URL}/shipping/fetch_rates`,
+        requestBody,
+        { headers: this.headers, timeout: 30000 }
+      );
+
+      logger.info('📥 ========================================');
+      logger.info('📥 SHIPBUBBLE RATES RESPONSE');
+      logger.info('📥 ========================================');
+      logger.info('📥 Status Code:', response.status);
+      logger.info('📥 Response Status:', response.data.status);
+      logger.info('📥 Response Message:', response.data.message);
+      logger.info('📥 Full Response Data:', JSON.stringify(response.data.data, null, 2));
+
+      if (response.data.data) {
+        logger.info('📥 Response Details:', {
+          requestToken: response.data.data.request_token,
+          courierCount: response.data.data.couriers?.length || 0,
+          hasCheapest: !!response.data.data.cheapest_courier,
+          hasFastest: !!response.data.data.fastest_courier,
+          hasBestValue: !!response.data.data.best_value_courier,
+        });
+
+        if (response.data.data.couriers) {
+          logger.info('📦 Available Couriers:');
+          response.data.data.couriers.forEach((courier: any, index: number) => {
+            logger.info(`  ${index + 1}. ${courier.courier_name}:`, {
+              courier_id: courier.courier_id,
+              service_code: courier.service_code,
+              service_type: courier.service_type,
+              price: courier.total || courier.rate_card_amount,
+              eta: courier.delivery_eta,
+              pickup_eta: courier.pickup_eta,
+            });
           });
+        }
+      }
+
+      logger.info('✅ ShipBubble rates retrieved successfully');
+
+      return response.data;
+    } catch (error: any) {
+      logger.error('❌ ========================================');
+      logger.error('❌ SHIPBUBBLE FETCH_RATES ERROR');
+      logger.error('❌ ========================================');
+      logger.error('❌ Error Message:', error.message);
+      logger.error('❌ Response Status:', error.response?.status);
+      logger.error('❌ Response Status Text:', error.response?.statusText);
+      logger.error('❌ Response Data:', JSON.stringify(error.response?.data, null, 2));
+
+      if (error.response?.status === 401) {
+        logger.error('🔐 Unauthorized - Check your SHIPBUBBLE_API_KEY');
+      } else if (error.response?.status === 400) {
+        logger.error('⚠️ Bad Request - Invalid parameters');
+      } else if (error.response?.status === 422) {
+        logger.error('⚠️ Unprocessable Entity - Validation failed:', {
+          errors: error.response?.data?.errors,
         });
       }
+
+      throw error;
     }
+  }
 
-    logger.info('✅ ShipBubble rates retrieved successfully');
+  /**
+   * Get package categories
+   */
+  async getCategories() {
+    try {
+      logger.info('📦 Fetching package categories...');
 
-    return response.data;
-  } catch (error: any) {
-    logger.error('❌ ========================================');
-    logger.error('❌ SHIPBUBBLE FETCH_RATES ERROR');
-    logger.error('❌ ========================================');
-    logger.error('❌ Error Message:', error.message);
-    logger.error('❌ Response Status:', error.response?.status);
-    logger.error('❌ Response Status Text:', error.response?.statusText);
-    logger.error('❌ Response Data:', JSON.stringify(error.response?.data, null, 2));
+      const response = await axios.get(
+        `${SHIPBUBBLE_BASE_URL}/shipping/labels/categories`,
+        { headers: this.headers }
+      );
 
-    if (error.response?.status === 401) {
-      logger.error('🔐 Unauthorized - Check your SHIPBUBBLE_API_KEY');
-    } else if (error.response?.status === 400) {
-      logger.error('⚠️ Bad Request - Invalid parameters');
-    } else if (error.response?.status === 422) {
-      logger.error('⚠️ Unprocessable Entity - Validation failed:', {
-        errors: error.response?.data?.errors,
+      logger.info('✅ Categories retrieved:', response.data.data?.length || 0);
+      
+      return response.data;
+    } catch (error: any) {
+      logger.error('❌ ShipBubble categories error:', {
+        message: error.message,
+        status: error.response?.status,
+        data: error.response?.data,
       });
+      throw new Error('Failed to get categories');
     }
-
-    throw error;
   }
-}
 
-/**
- * Get package categories
- */
-async getCategories() {
-  try {
-    logger.info('📦 Fetching package categories...');
+  /**
+   * Get category ID by name (helper function)
+   * Updated with actual ShipBubble category IDs from their API
+   */
+  getCategoryIdByName(categoryName: string): number {
+    const categories: { [key: string]: number } = {
+      'hot food': 98190590,
+      'dry food': 24032950,
+      'dry food and supplements': 24032950,
+      'electronics': 77179563,
+      'electronics and gadgets': 77179563,
+      'electronic gadgets': 77179563,
+      'groceries': 2178251,
+      'sensitive items': 67658572,
+      'documents': 67658572,
+      'light weight': 20754594,
+      'light weight items': 20754594,
+      'machinery': 67008831,
+      'medical supplies': 57487393,
+      'health and beauty': 99652979,
+      'beauty': 99652979,
+      'furniture': 25590994,
+      'furniture and fittings': 25590994,
+      'fashion': 74794423,
+      'fashion wears': 74794423,
+      'default': 77179563, // Default to Electronics and gadgets
+    };
 
-    const response = await axios.get(
-      `${SHIPBUBBLE_BASE_URL}/shipping/labels/categories`,
-      { headers: this.headers }
-    );
-
-    logger.info('✅ Categories retrieved:', response.data.data?.length || 0);
-    
-    return response.data;
-  } catch (error: any) {
-    logger.error('❌ ShipBubble categories error:', {
-      message: error.message,
-      status: error.response?.status,
-      data: error.response?.data,
-    });
-    throw new Error('Failed to get categories');
+    const normalized = categoryName.toLowerCase().trim();
+    return categories[normalized] || categories['default'];
   }
-}
-
-/**
- * Get category ID by name (helper function)
- * Updated with actual ShipBubble category IDs from their API
- */
-getCategoryIdByName(categoryName: string): number {
-  const categories: { [key: string]: number } = {
-    'hot food': 98190590,
-    'dry food': 24032950,
-    'dry food and supplements': 24032950,
-    'electronics': 77179563,
-    'electronics and gadgets': 77179563,
-    'electronic gadgets': 77179563,
-    'groceries': 2178251,
-    'sensitive items': 67658572,
-    'documents': 67658572,
-    'light weight': 20754594,
-    'light weight items': 20754594,
-    'machinery': 67008831,
-    'medical supplies': 57487393,
-    'health and beauty': 99652979,
-    'beauty': 99652979,
-    'furniture': 25590994,
-    'furniture and fittings': 25590994,
-    'fashion': 74794423,
-    'fashion wears': 74794423,
-    'default': 77179563, // Default to Electronics and gadgets
-  };
-
-  const normalized = categoryName.toLowerCase().trim();
-  return categories[normalized] || categories['default'];
-}
 
   /**
    * Get all validated addresses

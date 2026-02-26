@@ -185,59 +185,83 @@ export class AffiliateController {
   /**
    * Get affiliate dashboard
    */
-  async getAffiliateDashboard(req: AuthRequest, res: Response<ApiResponse>): Promise<void> {
-    const user = await User.findById(req.user?.id);
-    if (!user || !user.isAffiliate) {
-      throw new AppError('Affiliate account not activated', 403);
-    }
-
-    // Get all affiliate links
-    const affiliateLinks = await AffiliateLink.find({ user: req.user?.id }).populate(
-      'product',
-      'name slug price images'
-    );
-
-    // Calculate totals
-    const totalClicks = affiliateLinks.reduce((sum, link) => sum + link.clicks, 0);
-    const totalConversions = affiliateLinks.reduce((sum, link) => sum + link.conversions, 0);
-    const totalEarnings = affiliateLinks.reduce((sum, link) => sum + link.totalEarned, 0);
-    const conversionRate = totalClicks > 0 ? (totalConversions / totalClicks) * 100 : 0;
-
-    // Get wallet
-    const wallet = await Wallet.findOne({ user: req.user?.id });
-
-    // Get recent conversions (orders with this affiliate)
-    const recentConversions = await Order.find({
-      affiliateUser: req.user?.id,
-      paymentStatus: 'completed',
-    })
-      .sort({ createdAt: -1 })
-      .limit(10)
-      .select('orderNumber total affiliateCommission createdAt');
-
-    // Top performing links
-    const topLinks = affiliateLinks
-      .sort((a, b) => b.totalEarned - a.totalEarned)
-      .slice(0, 5);
-
-    res.json({
-      success: true,
-      data: {
-        summary: {
-          affiliateCode: user.affiliateCode,
-          totalClicks,
-          totalConversions,
-          totalEarnings,
-          conversionRate: conversionRate.toFixed(2),
-          availableBalance: wallet?.balance || 0,
-        },
-        links: affiliateLinks,
-        topPerformingLinks: topLinks,
-        recentConversions,
-      },
-    });
+  /**
+ * Get affiliate dashboard
+ */
+async getAffiliateDashboard(req: AuthRequest, res: Response<ApiResponse>): Promise<void> {
+  const user = await User.findById(req.user?.id);
+  if (!user || !user.isAffiliate) {
+    throw new AppError('Affiliate account not activated', 403);
   }
 
+  // Get all affiliate links
+  const affiliateLinks = await AffiliateLink.find({ user: req.user?.id }).populate(
+    'product',
+    'name slug price images'
+  );
+
+  // Calculate totals from affiliate links
+  const totalClicks = affiliateLinks.reduce((sum, link) => sum + link.clicks, 0);
+  const totalConversions = affiliateLinks.reduce((sum, link) => sum + link.conversions, 0);
+  const totalEarnings = affiliateLinks.reduce((sum, link) => sum + link.totalEarned, 0);
+  const conversionRate = totalClicks > 0 ? (totalConversions / totalClicks) * 100 : 0;
+
+  // Get all affiliate orders (completed payment)
+  const allAffiliateOrders = await Order.find({
+    affiliateUser: req.user?.id,
+    paymentStatus: 'completed',
+  }).select('affiliateCommission status createdAt');
+
+  // Pending = orders where payment is completed but order not yet delivered/completed
+  const pendingCommission = allAffiliateOrders
+    .filter((order) => !['delivered', 'completed'].includes(order.status))
+    .reduce((sum, order) => sum + (order.affiliateCommission || 0), 0);
+
+  // Cleared = orders that are delivered/completed
+  const clearedCommission = allAffiliateOrders
+    .filter((order) => ['delivered', 'completed'].includes(order.status))
+    .reduce((sum, order) => sum + (order.affiliateCommission || 0), 0);
+
+  // Get wallet for withdrawal info
+  const wallet = await Wallet.findOne({ user: req.user?.id });
+  const totalWithdrawn = wallet?.totalWithdrawn || 0;
+
+  // Available = cleared commissions minus what's already been withdrawn
+  const availableBalance = Math.max(clearedCommission - totalWithdrawn, 0);
+
+  // Get recent conversions
+  const recentConversions = await Order.find({
+    affiliateUser: req.user?.id,
+    paymentStatus: 'completed',
+  })
+    .sort({ createdAt: -1 })
+    .limit(10)
+    .select('orderNumber total affiliateCommission status createdAt');
+
+  // Top performing links
+  const topLinks = affiliateLinks
+    .sort((a, b) => b.totalEarned - a.totalEarned)
+    .slice(0, 5);
+
+  res.json({
+    success: true,
+    data: {
+      summary: {
+        affiliateCode: user.affiliateCode,
+        totalClicks,
+        totalConversions,
+        totalEarnings,
+        conversionRate: conversionRate.toFixed(2),
+        availableBalance,
+        pendingBalance: pendingCommission,
+        totalWithdrawn,
+      },
+      links: affiliateLinks,
+      topPerformingLinks: topLinks,
+      recentConversions,
+    },
+  });
+}
   /**
    * Get affiliate earnings
    */

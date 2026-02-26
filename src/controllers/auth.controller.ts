@@ -8,6 +8,7 @@ import { sendOTPEmail, sendWelcomeEmail, sendPasswordResetEmail, sendFounderWelc
 import { AppError } from '../middleware/error';
 import crypto from 'crypto';
 import { queueEmailsInBackground } from '../utils/email-queue';
+import { deleteFromCloudinary, uploadToCloudinary } from '../utils/cloudinary';
 
 export class AuthController {
   /**
@@ -308,10 +309,10 @@ private async awardDailyLoginPoints(user: any): Promise<void> {
   }
 }
 
-  /**
-   * Forgot password - Generate and send reset code
-   */
-  async forgotPassword(req: AuthRequest, res: Response<ApiResponse>): Promise<void> {
+ /**
+ * Forgot password - Generate and send reset OTP
+ */
+async forgotPassword(req: AuthRequest, res: Response<ApiResponse>): Promise<void> {
     const { email } = req.body;
 
     const user = await User.findOne({ email });
@@ -324,18 +325,18 @@ private async awardDailyLoginPoints(user: any): Promise<void> {
       return;
     }
 
-    // Generate 6-character alphanumeric reset code
-    const resetCode = generateResetCode();
-    const hashedCode = crypto.createHash('sha256').update(resetCode).digest('hex');
+    // Generate OTP
+    const otpCode = generateOTP();
+    const hashedCode = crypto.createHash('sha256').update(otpCode).digest('hex');
 
     user.resetPasswordToken = hashedCode;
     user.resetPasswordExpires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
     await user.save();
 
-    // Send reset email with the code
-    await sendPasswordResetEmail(email, resetCode);
+    // Send reset email with OTP
+    await sendPasswordResetEmail(email, otpCode);
 
-    console.log(`🔐 Password reset code generated for ${email}: ${resetCode}`); // For development
+    console.log(`🔐 Password reset OTP generated for ${email}: ${otpCode}`);
 
     res.json({
       success: true,
@@ -344,12 +345,11 @@ private async awardDailyLoginPoints(user: any): Promise<void> {
   }
 
   /**
-   * Reset password with code
+   * Reset password with OTP code
    */
   async resetPassword(req: AuthRequest, res: Response<ApiResponse>): Promise<void> {
-    // Log the incoming request body for debugging
     console.log('🔍 Reset password request body:', JSON.stringify(req.body, null, 2));
-    
+
     const { code, password, token } = req.body;
 
     // Accept both 'code' and 'token' for backwards compatibility
@@ -360,10 +360,9 @@ private async awardDailyLoginPoints(user: any): Promise<void> {
       throw new AppError('Reset code and new password are required', 400);
     }
 
-    // Convert code to uppercase and hash it
-    const normalizedCode = resetCode.toUpperCase().trim();
+    const normalizedCode = resetCode.trim();
     console.log('🔐 Normalized code:', normalizedCode);
-    
+
     const hashedCode = crypto.createHash('sha256').update(normalizedCode).digest('hex');
 
     const user = await User.findOne({
@@ -391,7 +390,6 @@ private async awardDailyLoginPoints(user: any): Promise<void> {
       message: 'Password reset successful',
     });
   }
-
   /**
    * Refresh token
    */
@@ -475,6 +473,26 @@ private async awardDailyLoginPoints(user: any): Promise<void> {
       data: { user },
     });
   }
+
+
+  // In auth.controller.ts
+async updateAvatar(req: AuthRequest, res: Response<ApiResponse>): Promise<void> {
+  const { base64Image } = req.body;
+  const user = await User.findById(req.user?.id);
+  if (!user) throw new AppError('User not found', 404);
+
+  // Delete old avatar if exists
+  if (user.avatar) {
+    const oldPublicId = user.avatar.split('/').slice(-2).join('/').split('.')[0];
+    await deleteFromCloudinary(oldPublicId).catch(() => {});
+  }
+
+  const { url } = await uploadToCloudinary(base64Image, 'avatars');
+  user.avatar = url;
+  await user.save();
+
+  res.json({ success: true, message: 'Avatar updated', data: { avatar: url } });
+}
 
   /**
    * Change password

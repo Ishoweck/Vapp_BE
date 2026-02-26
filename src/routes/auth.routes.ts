@@ -56,6 +56,7 @@ router.post('/oauth/apple', validate(appleLoginValidation), asyncHandler(oauthCo
 // Protected routes
 router.get('/me', authenticate, asyncHandler(authController.getMe.bind(authController)));
 router.put('/profile', authenticate, asyncHandler(authController.updateProfile.bind(authController)));
+router.put('/avatar', authenticate, asyncHandler(authController.updateAvatar.bind(authController)));
 router.put('/change-password', authenticate, asyncHandler(authController.changePassword.bind(authController)));
 
 export default router;

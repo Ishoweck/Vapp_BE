@@ -43,7 +43,8 @@ export enum OrderStatus {
   DELIVERED = 'delivered',
   CANCELLED = 'cancelled',
   REFUNDED = 'refunded',
-  FAILED = 'failed'
+  FAILED = 'failed',
+  DISPUTED = 'disputed',
 }
 
 // Payment Status
@@ -58,8 +59,8 @@ export enum PaymentStatus {
 // Payment Method
 export enum PaymentMethod {
   PAYSTACK = 'paystack',
+  FLUTTERWAVE = 'flutterwave',
   WALLET = 'wallet',
-  CASH_ON_DELIVERY = 'cash_on_delivery'
 }
 
 // Transaction Types
