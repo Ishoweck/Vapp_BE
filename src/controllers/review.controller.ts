@@ -3,7 +3,9 @@ import { AuthRequest, ApiResponse } from '../types';
 import Review from '../models/Review';
 import Product from '../models/Product';
 import Order from '../models/Order';
+import User from '../models/User';
 import { AppError } from '../middleware/error';
+import { notificationService } from '../services/notification.service';
 import { logger } from '../utils/logger';
 
 export class ReviewController {
@@ -48,6 +50,22 @@ export class ReviewController {
 
     // Update product rating
     await this.updateProductRating(productId);
+
+    // Notify vendor about new review
+    try {
+      const product = await Product.findById(productId).select('vendor name');
+      const reviewer = await User.findById(req.user?.id).select('firstName lastName');
+      if (product && reviewer) {
+        await notificationService.newReviewOnProduct(
+          product.vendor.toString(),
+          product.name,
+          rating,
+          `${reviewer.firstName} ${reviewer.lastName}`
+        );
+      }
+    } catch (error) {
+      logger.error('Error sending review notification:', error);
+    }
 
     logger.info(`Review created: ${review._id} for product ${productId} on order ${orderId}`);
 

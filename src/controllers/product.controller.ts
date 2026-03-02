@@ -2,9 +2,11 @@ import { Response } from 'express';
 import { AuthRequest, ApiResponse, ProductStatus } from '../types';
 import Product from '../models/Product';
 import Category from '../models/Category';
+import VendorProfile from '../models/VendorProfile';
 import { AppError } from '../middleware/error';
 import { getPaginationMeta, generateSlug, generateSKU } from '../utils/helpers';
 import { uploadMultipleToCloudinary, uploadDigitalFileToCloudinary, uploadToCloudinary } from '../utils/cloudinary';
+import { notificationService } from '../services/notification.service';
 
 export class ProductController {
   
@@ -87,6 +89,22 @@ async createProduct(req: AuthRequest, res: Response<ApiResponse>): Promise<void>
 
     // Format product for response
     const formattedProduct = this.formatProduct(product);
+
+    // Notify vendor followers about new product
+    try {
+      const vendorProfile = await VendorProfile.findOne({ user: req.user?.id }).select('followers businessName');
+      if (vendorProfile && vendorProfile.followers && vendorProfile.followers.length > 0) {
+        const followerIds = vendorProfile.followers.map((f: any) => f.toString());
+        await notificationService.newProductFromFollowedVendor(
+          followerIds,
+          vendorProfile.businessName || 'A vendor you follow',
+          product.name,
+          product._id.toString()
+        );
+      }
+    } catch (error) {
+      console.error('Error sending new product notification:', error);
+    }
 
     console.log('✅ Sending success response to frontend');
 
@@ -693,8 +711,30 @@ async getProducts(req: AuthRequest, res: Response<ApiResponse>): Promise<void> {
       throw new AppError('Not authorized', 403);
     }
 
+    const oldPrice = product.price;
+
     Object.assign(product, req.body);
     await product.save();
+
+    // Notify wishlisted users about price drop
+    if (req.body.price && req.body.price < oldPrice) {
+      try {
+        const { Wishlist } = await import('../models/Additional');
+        const wishlists = await Wishlist.find({ 'items.product': product._id }).select('user');
+        const userIds = wishlists.map((w: any) => w.user.toString());
+        if (userIds.length > 0) {
+          await notificationService.priceDrop(
+            userIds,
+            product.name,
+            oldPrice,
+            req.body.price,
+            product._id.toString()
+          );
+        }
+      } catch (error) {
+        console.error('Error sending price drop notification:', error);
+      }
+    }
 
     res.json({
       success: true,

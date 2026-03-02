@@ -2,6 +2,7 @@
 import { Request, Response } from 'express';
 import { AuthRequest, ApiResponse, OrderStatus } from '../types';
 import Order from '../models/Order';
+import { notificationService } from '../services/notification.service';
 import { logger } from '../utils/logger';
 import { AppError } from '../middleware/error';
 
@@ -127,8 +128,26 @@ export class WebhookController {
           orderNumber: order.orderNumber,
         });
 
-        // TODO: Send email notification to customer
-        // TODO: Send push notification if applicable
+        // Send delivery status notification to customer
+        try {
+          const customerId = (order.user as any)._id
+            ? (order.user as any)._id.toString()
+            : order.user.toString();
+          await notificationService.deliveryStatusUpdate(
+            order._id.toString(),
+            order.orderNumber,
+            status.toLowerCase(),
+            customerId
+          );
+          await notificationService.orderStatusUpdated(
+            order._id.toString(),
+            order.orderNumber,
+            newStatus,
+            customerId
+          );
+        } catch (error) {
+          logger.error('Error sending webhook notification:', error);
+        }
       } else {
         logger.info('ℹ️ No status change needed');
       }

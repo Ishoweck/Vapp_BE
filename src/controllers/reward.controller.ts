@@ -7,6 +7,7 @@ import Order from '../models/Order';
 import PointsTransaction from '../models/PointsTransaction';
 import { Wallet } from '../models/Additional';
 import { AppError } from '../middleware/error';
+import { notificationService } from '../services/notification.service';
 import { logger } from '../utils/logger';
 
 export class RewardController {
@@ -84,6 +85,13 @@ export class RewardController {
       metadata,
     });
 
+    // Notify user
+    try {
+      await notificationService.pointsEarned(userId, points, description);
+    } catch (error) {
+      logger.error('Error sending points notification:', error);
+    }
+
     logger.info(`Points awarded: ${points} to user ${userId} - ${description}`);
   }
 
@@ -145,6 +153,13 @@ export class RewardController {
 
     logger.info(`Points redeemed: ${points} by user ${req.user?.id}`);
 
+    // Notify user
+    try {
+      await notificationService.pointsRedeemed(req.user!.id, points, cashValue);
+    } catch (error) {
+      logger.error('Error sending redeem notification:', error);
+    }
+
     res.json({
       success: true,
       message: 'Points redeemed successfully',
@@ -173,6 +188,13 @@ export class RewardController {
     if (!user.badges.includes(badge)) {
       user.badges.push(badge);
       await user.save();
+
+      // Notify user
+      try {
+        await notificationService.badgeEarned(userId, badge);
+      } catch (error) {
+        logger.error('Error sending badge notification:', error);
+      }
 
       logger.info(`Badge awarded: ${badge} to user ${userId}`);
     }

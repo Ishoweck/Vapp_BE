@@ -7,6 +7,7 @@ import Order from '../models/Order';
 import User from '../models/User';
 import { Wallet } from '../models/Additional';
 import { AppError } from '../middleware/error';
+import { notificationService } from '../services/notification.service';
 import { logger } from '../utils/logger';
 
 // Generate dispute number (e.g., DSP-20260225-XXXX)
@@ -140,6 +141,18 @@ export class DisputeController {
     await order.save();
 
     logger.info(`✅ Dispute created: ${disputeNumber} for order ${order.orderNumber}`);
+
+    // Notify both parties
+    try {
+      await notificationService.disputeCreated(
+        order._id.toString(),
+        order.orderNumber,
+        vendorId,
+        req.user!.id
+      );
+    } catch (error) {
+      logger.error('Error sending dispute notification:', error);
+    }
 
     res.status(201).json({
       success: true,
@@ -528,6 +541,22 @@ export class DisputeController {
         order.status = OrderStatus.DELIVERED;
         await order.save();
       }
+    }
+
+    // Notify both parties about resolution
+    try {
+      const resolutionMessage = refundType === 'none'
+        ? 'Rejected — no refund issued.'
+        : `${refundType === 'full' ? 'Full' : 'Partial'} refund of ₦${finalRefundAmount.toLocaleString()} issued.`;
+      await notificationService.disputeResolved(
+        order._id.toString(),
+        dispute.orderNumber,
+        dispute.vendor.toString(),
+        dispute.user.toString(),
+        resolutionMessage
+      );
+    } catch (error) {
+      logger.error('Error sending dispute resolution notification:', error);
     }
 
     logger.info('⚖️ ============================================');

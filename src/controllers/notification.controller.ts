@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest, ApiResponse, NotificationType } from '../types';
 import { Notification } from '../models/Additional';
+import User from '../models/User';
 import { AppError } from '../middleware/error';
 
 export class NotificationController {
@@ -114,6 +115,61 @@ export class NotificationController {
     res.json({
       success: true,
       message: 'All notifications cleared',
+    });
+  }
+
+  /**
+   * Register FCM token for push notifications
+   */
+  async registerFcmToken(req: AuthRequest, res: Response<ApiResponse>): Promise<void> {
+    const { token } = req.body;
+
+    if (!token) {
+      throw new AppError('FCM token is required', 400);
+    }
+
+    await User.findByIdAndUpdate(req.user?.id, {
+      $addToSet: { fcmTokens: token },
+    });
+
+    res.json({
+      success: true,
+      message: 'FCM token registered',
+    });
+  }
+
+  /**
+   * Unregister FCM token
+   */
+  async unregisterFcmToken(req: AuthRequest, res: Response<ApiResponse>): Promise<void> {
+    const { token } = req.body;
+
+    if (!token) {
+      throw new AppError('FCM token is required', 400);
+    }
+
+    await User.findByIdAndUpdate(req.user?.id, {
+      $pull: { fcmTokens: token },
+    });
+
+    res.json({
+      success: true,
+      message: 'FCM token removed',
+    });
+  }
+
+  /**
+   * Get unread notification count
+   */
+  async getUnreadCount(req: AuthRequest, res: Response<ApiResponse>): Promise<void> {
+    const unreadCount = await Notification.countDocuments({
+      user: req.user?.id,
+      read: false,
+    });
+
+    res.json({
+      success: true,
+      data: { unreadCount },
     });
   }
 

@@ -15,6 +15,7 @@
   import { flutterwaveService } from '../services/flutterwave.service';
   import { shipBubbleService } from '../services/shipbubble.service';
   import { sendOrderConfirmationEmail } from '../utils/email';
+  import { notificationService } from '../services/notification.service';
   import { logger } from '../utils/logger';
 
   export class OrderController {
@@ -893,14 +894,34 @@
         logger.error('Error sending confirmation email:', error);
       }
 
+      // Send notifications to customer and vendors
+      try {
+        const vendorIds = [...new Set(order.items.map((item: any) => item.vendor.toString()))];
+        await notificationService.orderPlaced(
+          order._id.toString(),
+          order.orderNumber,
+          order.total,
+          req.user!.id,
+          vendorIds
+        );
+        await notificationService.paymentCompleted(
+          order._id.toString(),
+          order.orderNumber,
+          order.total,
+          req.user!.id
+        );
+      } catch (error) {
+        logger.error('Error sending order notifications:', error);
+      }
+
       logger.info('🛒 ============================================');
       logger.info('🛒 CREATE ORDER COMPLETED (WALLET)');
       logger.info('🛒 ============================================');
 
       res.status(201).json({
         success: true,
-        message: isDigitalOnly 
-          ? 'Digital order completed — instant access granted' 
+        message: isDigitalOnly
+          ? 'Digital order completed — instant access granted'
           : 'Order placed successfully with wallet payment',
         data: {
           order,
@@ -1421,6 +1442,26 @@
         logger.info('✅ Confirmation email sent');
       } catch (error) {
         logger.error('Error sending confirmation email:', error);
+      }
+
+      // Send notifications to customer and vendors
+      try {
+        const vendorIds = [...new Set(order.items.map((item: any) => item.vendor.toString()))];
+        await notificationService.orderPlaced(
+          order._id.toString(),
+          order.orderNumber,
+          order.total,
+          req.user!.id,
+          vendorIds
+        );
+        await notificationService.paymentCompleted(
+          order._id.toString(),
+          order.orderNumber,
+          order.total,
+          req.user!.id
+        );
+      } catch (error) {
+        logger.error('Error sending order notifications:', error);
       }
 
       logger.info('✅ ============================================');
@@ -2299,6 +2340,27 @@
         (order as any).refundAmount = order.total;
         (order as any).refundReason = cancelReason;
         await order.save();
+
+        // Notify customer about refund
+        try {
+          await notificationService.refundIssued(req.user!.id, order.orderNumber, order.total);
+        } catch (error) {
+          logger.error('Error sending refund notification:', error);
+        }
+      }
+
+      // Notify vendors about cancellation
+      try {
+        const vendorIds = [...new Set(order.items.map((item: any) => item.vendor.toString()))];
+        await notificationService.orderCancelled(
+          order._id.toString(),
+          order.orderNumber,
+          req.user!.id,
+          vendorIds,
+          'customer'
+        );
+      } catch (error) {
+        logger.error('Error sending cancel notifications:', error);
       }
 
       res.json({
@@ -2406,6 +2468,21 @@
         from: oldStatus,
         to: status,
       });
+
+      // Notify customer about status change
+      try {
+        const customerId = (order.user as any)._id
+          ? (order.user as any)._id.toString()
+          : order.user.toString();
+        await notificationService.orderStatusUpdated(
+          order._id.toString(),
+          order.orderNumber,
+          status,
+          customerId
+        );
+      } catch (error) {
+        logger.error('Error sending status update notification:', error);
+      }
 
       // ✅ Create shipment when vendor confirms/processes (only for physical products)
       const vendorShipment = (order as any).vendorShipments?.find(

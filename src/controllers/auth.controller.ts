@@ -9,6 +9,7 @@ import { AppError } from '../middleware/error';
 import crypto from 'crypto';
 import { queueEmailsInBackground } from '../utils/email-queue';
 import { deleteFromCloudinary, uploadToCloudinary } from '../utils/cloudinary';
+import { notificationService } from '../services/notification.service';
 
 export class AuthController {
   /**
@@ -106,6 +107,25 @@ async verifyEmail(req: AuthRequest, res: Response<ApiResponse>): Promise<void> {
     () => sendFounderWelcomeEmail(user.email),
     () => sendProductPostingGuideEmail(user.email),
   ], 10000); // 10 seconds between each email
+
+  // Send welcome notification
+  try {
+    await notificationService.welcomeNotification(user._id.toString(), user.firstName);
+  } catch (error) {
+    // Non-critical, don't throw
+  }
+
+  // Notify referrer if this user was referred
+  if (user.referredBy) {
+    try {
+      await notificationService.referralSignup(
+        user.referredBy.toString(),
+        `${user.firstName} ${user.lastName}`
+      );
+    } catch (error) {
+      // Non-critical
+    }
+  }
 
   // Generate tokens
   const tokens = generateTokens(user._id, user.email, user.role);

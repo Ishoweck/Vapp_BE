@@ -11,6 +11,7 @@ import Product from '../models/Product';
 import Order from '../models/Order';
 import User from '../models/User';
 import { AppError } from '../middleware/error';
+import { notificationService } from '../services/notification.service';
 import { logger } from '../utils/logger';
 
 export class VendorController {
@@ -912,6 +913,18 @@ export class VendorController {
     }
 
     await vendorProfile.save();
+
+    // Notify vendor about verification status
+    try {
+      const vendorUserId = vendorProfile.user.toString();
+      if (status === 'verified') {
+        await notificationService.vendorVerified(vendorUserId);
+      } else if (status === 'rejected') {
+        await notificationService.vendorRejected(vendorUserId, rejectionReason);
+      }
+    } catch (error) {
+      logger.error('Error sending vendor KYC notification:', error);
+    }
 
     logger.info(`Vendor KYC ${status}: ${vendorId}`);
 
