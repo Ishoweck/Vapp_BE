@@ -162,6 +162,9 @@ class AffiliateController {
     /**
      * Get affiliate dashboard
      */
+    /**
+   * Get affiliate dashboard
+   */
     async getAffiliateDashboard(req, res) {
         const user = await User_1.default.findById(req.user?.id);
         if (!user || !user.isAffiliate) {
@@ -169,21 +172,37 @@ class AffiliateController {
         }
         // Get all affiliate links
         const affiliateLinks = await Additional_1.AffiliateLink.find({ user: req.user?.id }).populate('product', 'name slug price images');
-        // Calculate totals
+        // Calculate totals from affiliate links
         const totalClicks = affiliateLinks.reduce((sum, link) => sum + link.clicks, 0);
         const totalConversions = affiliateLinks.reduce((sum, link) => sum + link.conversions, 0);
         const totalEarnings = affiliateLinks.reduce((sum, link) => sum + link.totalEarned, 0);
         const conversionRate = totalClicks > 0 ? (totalConversions / totalClicks) * 100 : 0;
-        // Get wallet
+        // Get all affiliate orders (completed payment)
+        const allAffiliateOrders = await Order_1.default.find({
+            affiliateUser: req.user?.id,
+            paymentStatus: 'completed',
+        }).select('affiliateCommission status createdAt');
+        // Pending = orders where payment is completed but order not yet delivered/completed
+        const pendingCommission = allAffiliateOrders
+            .filter((order) => !['delivered', 'completed'].includes(order.status))
+            .reduce((sum, order) => sum + (order.affiliateCommission || 0), 0);
+        // Cleared = orders that are delivered/completed
+        const clearedCommission = allAffiliateOrders
+            .filter((order) => ['delivered', 'completed'].includes(order.status))
+            .reduce((sum, order) => sum + (order.affiliateCommission || 0), 0);
+        // Get wallet for withdrawal info
         const wallet = await Additional_2.Wallet.findOne({ user: req.user?.id });
-        // Get recent conversions (orders with this affiliate)
+        const totalWithdrawn = wallet?.totalWithdrawn || 0;
+        // Available = cleared commissions minus what's already been withdrawn
+        const availableBalance = Math.max(clearedCommission - totalWithdrawn, 0);
+        // Get recent conversions
         const recentConversions = await Order_1.default.find({
             affiliateUser: req.user?.id,
             paymentStatus: 'completed',
         })
             .sort({ createdAt: -1 })
             .limit(10)
-            .select('orderNumber total affiliateCommission createdAt');
+            .select('orderNumber total affiliateCommission status createdAt');
         // Top performing links
         const topLinks = affiliateLinks
             .sort((a, b) => b.totalEarned - a.totalEarned)
@@ -197,7 +216,9 @@ class AffiliateController {
                     totalConversions,
                     totalEarnings,
                     conversionRate: conversionRate.toFixed(2),
-                    availableBalance: wallet?.balance || 0,
+                    availableBalance,
+                    pendingBalance: pendingCommission,
+                    totalWithdrawn,
                 },
                 links: affiliateLinks,
                 topPerformingLinks: topLinks,

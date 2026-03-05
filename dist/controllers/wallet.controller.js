@@ -10,6 +10,7 @@ const User_1 = __importDefault(require("../models/User"));
 const error_1 = require("../middleware/error");
 const paystack_service_1 = require("../services/paystack.service");
 const helpers_1 = require("../utils/helpers");
+const notification_service_1 = require("../services/notification.service");
 const logger_1 = require("../utils/logger");
 class WalletController {
     /**
@@ -136,6 +137,13 @@ class WalletController {
                 });
                 await wallet.save();
                 logger_1.logger.info(`Wallet top-up verified: ${reference} - ₦${amount}`);
+                // Notify user
+                try {
+                    await notification_service_1.notificationService.walletTopUp(req.user.id, amount, wallet.balance);
+                }
+                catch (error) {
+                    logger_1.logger.error('Error sending top-up notification:', error);
+                }
                 res.json({
                     success: true,
                     message: 'Top-up successful',
@@ -179,9 +187,14 @@ class WalletController {
             timestamp: new Date(),
         });
         await wallet.save();
-        // In production, this would create a payout request and notify admins
-        // For now, we'll just log it
         logger_1.logger.info(`Withdrawal requested: ${req.user?.id} - ₦${amount}`);
+        // Notify user
+        try {
+            await notification_service_1.notificationService.walletWithdrawalRequested(req.user.id, amount);
+        }
+        catch (error) {
+            logger_1.logger.error('Error sending withdrawal notification:', error);
+        }
         res.json({
             success: true,
             message: 'Withdrawal request submitted. It will be processed within 1-3 business days.',
@@ -206,21 +219,25 @@ class WalletController {
             throw new error_1.AppError('Transaction already processed', 400);
         }
         if (status === 'completed') {
-            // Process payout via Paystack Transfer API
-            // This would require additional setup in production
             transaction.status = 'completed';
             wallet.pendingBalance -= transaction.amount;
             wallet.totalWithdrawn += transaction.amount;
             logger_1.logger.info(`Withdrawal completed: ${userId} - ₦${transaction.amount}`);
         }
         else if (status === 'failed') {
-            // Refund to balance
             transaction.status = 'failed';
             wallet.balance += transaction.amount;
             wallet.pendingBalance -= transaction.amount;
             logger_1.logger.info(`Withdrawal failed: ${userId} - ₦${transaction.amount}`);
         }
         await wallet.save();
+        // Notify user about withdrawal status
+        try {
+            await notification_service_1.notificationService.walletWithdrawalProcessed(userId, transaction.amount, status);
+        }
+        catch (error) {
+            logger_1.logger.error('Error sending withdrawal status notification:', error);
+        }
         res.json({
             success: true,
             message: `Withdrawal ${status}`,
@@ -319,6 +336,14 @@ class WalletController {
         });
         await recipientWallet.save();
         logger_1.logger.info(`Fund transfer: ${req.user?.email} -> ${recipientEmail} - ₦${amount}`);
+        // Notify both parties
+        try {
+            const sender = await User_1.default.findById(req.user?.id).select('firstName lastName');
+            await notification_service_1.notificationService.walletTransfer(req.user.id, recipient._id.toString(), amount, sender ? `${sender.firstName} ${sender.lastName}` : 'Someone', `${recipient.firstName} ${recipient.lastName}`);
+        }
+        catch (error) {
+            logger_1.logger.error('Error sending transfer notification:', error);
+        }
         res.json({
             success: true,
             message: 'Transfer successful',

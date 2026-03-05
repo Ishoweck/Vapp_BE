@@ -1,7 +1,11 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.notificationController = exports.NotificationController = void 0;
 const Additional_1 = require("../models/Additional");
+const User_1 = __importDefault(require("../models/User"));
 const error_1 = require("../middleware/error");
 class NotificationController {
     /**
@@ -96,6 +100,51 @@ class NotificationController {
         res.json({
             success: true,
             message: 'All notifications cleared',
+        });
+    }
+    /**
+     * Register FCM token for push notifications
+     */
+    async registerFcmToken(req, res) {
+        const { token } = req.body;
+        if (!token) {
+            throw new error_1.AppError('FCM token is required', 400);
+        }
+        await User_1.default.findByIdAndUpdate(req.user?.id, {
+            $addToSet: { fcmTokens: token },
+        });
+        res.json({
+            success: true,
+            message: 'FCM token registered',
+        });
+    }
+    /**
+     * Unregister FCM token
+     */
+    async unregisterFcmToken(req, res) {
+        const { token } = req.body;
+        if (!token) {
+            throw new error_1.AppError('FCM token is required', 400);
+        }
+        await User_1.default.findByIdAndUpdate(req.user?.id, {
+            $pull: { fcmTokens: token },
+        });
+        res.json({
+            success: true,
+            message: 'FCM token removed',
+        });
+    }
+    /**
+     * Get unread notification count
+     */
+    async getUnreadCount(req, res) {
+        const unreadCount = await Additional_1.Notification.countDocuments({
+            user: req.user?.id,
+            read: false,
+        });
+        res.json({
+            success: true,
+            data: { unreadCount },
         });
     }
     /**

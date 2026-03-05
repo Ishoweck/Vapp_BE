@@ -14,6 +14,12 @@ export declare class OrderController {
      */
     private validatePaymentMethod;
     /**
+     * ✅ NEW: Determine the best ShipBubble category based on product names
+     * Uses keyword matching to pick the right category so ShipBubble
+     * returns the most relevant couriers for the product type.
+     */
+    private determineCategoryForItems;
+    /**
      * Get delivery rates
      */
     getDeliveryRates(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
@@ -23,12 +29,36 @@ export declare class OrderController {
     private aggregateVendorRates;
     private compareEstimatedDays;
     /**
-     * Create order from cart - WITH DIGITAL PRODUCTS SUPPORT
+     * Create order from cart - WALLET PAYMENTS ONLY
+     * For Paystack/Flutterwave, use initializePayment → confirmPayment flow instead
      */
     createOrder(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
+    /**
+     * ✅ NEW: Initialize payment WITHOUT creating an order
+     * Step 1 of the payment-first flow:
+     * - Validates cart & stock
+     * - Calculates totals (subtotal + shipping)
+     * - Initializes Paystack/Flutterwave
+     * - Returns payment URL + a checkout token (encrypted cart snapshot)
+     * - NO order is created, NO cart is cleared
+     */
+    initializePayment(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
+    /**
+     * ✅ NEW: Confirm payment & create order ATOMICALLY
+     * Step 2 of the payment-first flow:
+     * - Verifies payment with Paystack/Flutterwave
+     * - Re-validates cart & stock (could have changed while user was paying)
+     * - Creates the order
+     * - Clears the cart
+     * - Awards points, updates sales, sends email
+     */
+    confirmPayment(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
+    /**
+     * Create vendor shipments with ShipBubble
+     */
     private createVendorShipments;
     /**
-     * Verify payment - WITH DIGITAL PRODUCT ACCESS
+     * Verify payment - Supports Paystack and Flutterwave
      */
     verifyPayment(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
     /**
@@ -40,7 +70,7 @@ export declare class OrderController {
      */
     getOrder(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
     /**
-     * Get single order for vendor (vendor can view orders containing their products)
+     * Get single order for vendor
      */
     getVendorOrder(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
     /**

@@ -38,6 +38,7 @@ export declare class ShipBubbleService {
     validateAddress(address: ShipBubbleAddress): Promise<ValidatedAddress>;
     /**
      * Get delivery rates using ShipBubble's fetch_rates endpoint
+     * ✅ FIXED: Removed hardcoded service_type to get ALL courier types
      */
     getDeliveryRates(senderAddress: ShipBubbleAddress, receiverAddress: ShipBubbleAddress, packageItems: PackageItem[], packageDimension?: {
         length: number;
@@ -71,8 +72,9 @@ export declare class ShipBubbleService {
     }): Promise<any>;
     /**
      * Create shipment (book a shipment after getting rates)
+     * ✅ UPDATED TO SUPPORT service_code
      */
-    createShipment(requestToken: string, courierId: string | number, isInvoiceRequired?: boolean): Promise<any>;
+    createShipment(requestToken: string, courierId: string | number, serviceCode?: string, isInvoiceRequired?: boolean): Promise<any>;
     /**
      * Track shipment
      */

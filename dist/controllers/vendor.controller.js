@@ -15,6 +15,7 @@ const Product_1 = __importDefault(require("../models/Product"));
 const Order_1 = __importDefault(require("../models/Order"));
 const User_1 = __importDefault(require("../models/User"));
 const error_1 = require("../middleware/error");
+const notification_service_1 = require("../services/notification.service");
 const logger_1 = require("../utils/logger");
 class VendorController {
     /**
@@ -760,6 +761,19 @@ class VendorController {
             });
         }
         await vendorProfile.save();
+        // Notify vendor about verification status
+        try {
+            const vendorUserId = vendorProfile.user.toString();
+            if (status === 'verified') {
+                await notification_service_1.notificationService.vendorVerified(vendorUserId);
+            }
+            else if (status === 'rejected') {
+                await notification_service_1.notificationService.vendorRejected(vendorUserId, rejectionReason);
+            }
+        }
+        catch (error) {
+            logger_1.logger.error('Error sending vendor KYC notification:', error);
+        }
         logger_1.logger.info(`Vendor KYC ${status}: ${vendorId}`);
         res.json({
             success: true,

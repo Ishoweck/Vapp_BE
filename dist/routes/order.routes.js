@@ -11,7 +11,7 @@ const types_1 = require("../types");
 const router = (0, express_1.Router)();
 // All order routes require authentication
 router.use(auth_1.authenticate);
-// ✅ UPDATED: Conditional shipping address validation (optional for digital products)
+// ✅ Shipping address validation (optional for digital products)
 const createOrderValidation = [
     (0, express_validator_1.body)('shippingAddress.street')
         .optional()
@@ -29,13 +29,35 @@ const createOrderValidation = [
         .optional()
         .notEmpty()
         .withMessage('Country is required for physical products'),
+    // ✅ UPDATED: createOrder is now wallet-only
+    // Card payments use /initialize-payment → /confirm-payment flow
     (0, express_validator_1.body)('paymentMethod')
-        .isIn(['paystack', 'wallet', 'cash_on_delivery'])
-        .withMessage('Invalid payment method'),
+        .isIn(['wallet'])
+        .withMessage('This endpoint only accepts wallet payments. Use /initialize-payment for card payments.'),
     (0, express_validator_1.body)('deliveryType')
         .optional()
-        .isIn(['standard', 'express', 'same_day', 'pickup', 'digital']) // ✅ Added 'digital'
+        .isIn(['standard', 'express', 'same_day', 'pickup', 'digital'])
         .withMessage('Invalid delivery type'),
+];
+// ✅ NEW: Validation for initialize-payment
+const initializePaymentValidation = [
+    (0, express_validator_1.body)('paymentMethod')
+        .isIn(['paystack', 'flutterwave'])
+        .withMessage('Only card payment methods (paystack, flutterwave) can use this endpoint'),
+    (0, express_validator_1.body)('shippingAddress').optional().isObject(),
+    (0, express_validator_1.body)('deliveryType')
+        .optional()
+        .isIn(['standard', 'express', 'same_day', 'pickup', 'digital'])
+        .withMessage('Invalid delivery type'),
+];
+// ✅ NEW: Validation for confirm-payment
+const confirmPaymentValidation = [
+    (0, express_validator_1.body)('provider')
+        .isIn(['paystack', 'flutterwave'])
+        .withMessage('Valid payment provider required'),
+    (0, express_validator_1.body)('checkoutSnapshot')
+        .isObject()
+        .withMessage('Checkout snapshot is required'),
 ];
 const cancelOrderValidation = [
     (0, express_validator_1.body)('cancelReason').notEmpty().withMessage('Cancel reason is required'),
@@ -49,28 +71,45 @@ const getDeliveryRatesValidation = [
     (0, express_validator_1.query)('state').notEmpty().withMessage('State is required'),
     (0, express_validator_1.query)('weight').optional().isFloat({ min: 0 }).withMessage('Weight must be a positive number'),
 ];
-// Get delivery rates - MOVED BEFORE other routes to prevent conflicts
+// ============================================================
+// GET ROUTES
+// ============================================================
+// Get delivery rates - BEFORE other routes to prevent conflicts
 router.get('/delivery-rates', (0, validation_1.validate)(getDeliveryRatesValidation), (0, error_1.asyncHandler)(order_controller_1.orderController.getDeliveryRates.bind(order_controller_1.orderController)));
-// Payment verification - MOVED BEFORE :id routes to prevent conflicts
+// Payment verification - kept as webhook fallback
 router.get('/payment/verify/:reference', (0, error_1.asyncHandler)(order_controller_1.orderController.verifyPayment.bind(order_controller_1.orderController)));
-// ✅ NEW: Get user's digital products
+// Get user's digital products
 router.get('/my-digital-products', (0, error_1.asyncHandler)(order_controller_1.orderController.getUserDigitalProducts.bind(order_controller_1.orderController)));
-// Customer routes
+// Customer orders
 router.get('/my-orders', (0, error_1.asyncHandler)(order_controller_1.orderController.getUserOrders.bind(order_controller_1.orderController)));
 // Vendor get single order - BEFORE generic :id
 router.get('/vendor/orders/:id', (0, auth_1.authorize)(types_1.UserRole.VENDOR, types_1.UserRole.ADMIN, types_1.UserRole.SUPER_ADMIN), (0, error_1.asyncHandler)(order_controller_1.orderController.getVendorOrder.bind(order_controller_1.orderController)));
-// Vendor routes - MOVED BEFORE :id routes
+// Vendor orders list
 router.get('/vendor/orders', (0, auth_1.authorize)(types_1.UserRole.VENDOR, types_1.UserRole.ADMIN, types_1.UserRole.SUPER_ADMIN), (0, error_1.asyncHandler)(order_controller_1.orderController.getVendorOrders.bind(order_controller_1.orderController)));
-// Track order - specific route before generic :id
+// Track order
 router.get('/:id/track', (0, error_1.asyncHandler)(order_controller_1.orderController.trackOrder.bind(order_controller_1.orderController)));
-// ✅ NEW: Download digital product
+// Download digital product
 router.get('/:id/download/:itemId', (0, error_1.asyncHandler)(order_controller_1.orderController.downloadDigitalProduct.bind(order_controller_1.orderController)));
 // Generic get order - AFTER all specific routes
 router.get('/:id', (0, error_1.asyncHandler)(order_controller_1.orderController.getOrder.bind(order_controller_1.orderController)));
-// POST routes
+// ============================================================
+// POST ROUTES
+// ============================================================
+// ✅ NEW: Initialize payment (no order created yet)
+// For Paystack/Flutterwave card payments — Step 1
+router.post('/initialize-payment', (0, validation_1.validate)(initializePaymentValidation), (0, error_1.asyncHandler)(order_controller_1.orderController.initializePayment.bind(order_controller_1.orderController)));
+// ✅ NEW: Confirm payment & create order atomically
+// After user pays in WebView — Step 2
+router.post('/confirm-payment/:reference', (0, validation_1.validate)(confirmPaymentValidation), (0, error_1.asyncHandler)(order_controller_1.orderController.confirmPayment.bind(order_controller_1.orderController)));
+// Create order — WALLET PAYMENTS ONLY
+// Card payments must use /initialize-payment → /confirm-payment flow
 router.post('/', (0, validation_1.validate)(createOrderValidation), (0, error_1.asyncHandler)(order_controller_1.orderController.createOrder.bind(order_controller_1.orderController)));
+// Cancel order
 router.post('/:id/cancel', (0, validation_1.validate)(cancelOrderValidation), (0, error_1.asyncHandler)(order_controller_1.orderController.cancelOrder.bind(order_controller_1.orderController)));
-// PUT routes
+// ============================================================
+// PUT ROUTES
+// ============================================================
+// Vendor update order status
 router.put('/:id/status', (0, auth_1.authorize)(types_1.UserRole.VENDOR, types_1.UserRole.ADMIN, types_1.UserRole.SUPER_ADMIN), (0, validation_1.validate)(updateStatusValidation), (0, error_1.asyncHandler)(order_controller_1.orderController.updateOrderStatus.bind(order_controller_1.orderController)));
 exports.default = router;
 //# sourceMappingURL=order.routes.js.map

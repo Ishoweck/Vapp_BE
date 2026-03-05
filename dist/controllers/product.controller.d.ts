@@ -13,6 +13,11 @@ export declare class ProductController {
     getProductsOnSale(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
     getVendorProducts(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
     getTrendingProducts(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
+    /**
+     * Get Similar Products
+     * Returns products from the same category and/or vendor, excluding the current product
+     */
+    getSimilarProducts(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
     updateProduct(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
     deleteProduct(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
     private formatProduct;

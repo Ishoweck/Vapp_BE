@@ -47,22 +47,20 @@ const sendOTPEmail = async (email, otp) => {
     });
 };
 exports.sendOTPEmail = sendOTPEmail;
-const sendPasswordResetEmail = async (email, resetToken) => {
-    const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`;
+const sendPasswordResetEmail = async (email, resetCode) => {
     const html = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
       <h2 style="color: #ff6600;">VendorSpot - Password Reset</h2>
-      <p>You requested to reset your password. Click the button below to reset it:</p>
-      <a href="${resetUrl}" style="display: inline-block; padding: 12px 24px; background-color: #ff6600; color: white; text-decoration: none; border-radius: 5px; margin: 20px 0;">Reset Password</a>
-      <p>Or copy and paste this link into your browser:</p>
-      <p style="color: #666;">${resetUrl}</p>
-      <p>This link will expire in 1 hour.</p>
+      <p>You requested to reset your password. Use the code below to reset it:</p>
+      <h1 style="color: #ff6600; font-size: 32px; letter-spacing: 5px; text-align: center;">${resetCode}</h1>
+      <p>Enter this code in the app to reset your password.</p>
+      <p>This code will expire in 1 hour.</p>
       <p>If you didn't request this, please ignore this email.</p>
     </div>
   `;
     await (0, exports.sendEmail)({
         to: email,
-        subject: 'VendorSpot - Password Reset Request',
+        subject: 'VendorSpot - Password Reset Code',
         html,
     });
 };

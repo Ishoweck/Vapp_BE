@@ -1,5 +1,5 @@
 "use strict";
-// models/User.ts - COMPLETE USER MODEL WITH PROPER TYPING
+// models/User.ts - COMPLETE USER MODEL WITH OAUTH SUPPORT
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -50,7 +50,10 @@ const userSchema = new mongoose_1.Schema({
     },
     password: {
         type: String,
-        required: [true, 'Password is required'],
+        required: function () {
+            // Password not required for OAuth users
+            return !this.oauthProvider;
+        },
         minlength: 6,
         select: false,
     },
@@ -112,6 +115,16 @@ const userSchema = new mongoose_1.Schema({
             default: null,
         },
     },
+    // ✅ OAUTH FIELDS
+    oauthProvider: {
+        type: String,
+        enum: ['google', 'apple', 'facebook'],
+        sparse: true,
+    },
+    oauthId: {
+        type: String,
+        sparse: true,
+    },
 }, {
     timestamps: true,
 });
@@ -120,10 +133,11 @@ userSchema.index({ email: 1 });
 userSchema.index({ affiliateCode: 1 });
 userSchema.index({ role: 1 });
 userSchema.index({ status: 1 });
+userSchema.index({ oauthProvider: 1, oauthId: 1 }); // ✅ OAuth index
 // Hash password before saving
 userSchema.pre('save', async function (next) {
-    // Only hash if password is modified
-    if (!this.isModified('password')) {
+    // Skip hashing for OAuth users without password
+    if (!this.password || !this.isModified('password')) {
         return next();
     }
     try {
@@ -138,6 +152,10 @@ userSchema.pre('save', async function (next) {
 // Compare password method
 userSchema.methods.comparePassword = async function (candidatePassword) {
     try {
+        // If user has no password (OAuth user), return false
+        if (!this.password) {
+            return false;
+        }
         return await bcryptjs_1.default.compare(candidatePassword, this.password);
     }
     catch (error) {

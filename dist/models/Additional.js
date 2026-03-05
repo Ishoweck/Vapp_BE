@@ -275,6 +275,11 @@ const chatMessageSchema = new mongoose_1.Schema({
         default: false,
     },
     readAt: Date,
+    deleted: {
+        type: Boolean,
+        default: false,
+    },
+    deletedAt: Date,
 }, {
     timestamps: true,
 });

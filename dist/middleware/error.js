@@ -73,7 +73,12 @@ const errorHandler = (err, req, res, next) => {
     });
 };
 exports.errorHandler = errorHandler;
-const notFound = (req, res) => {
+// ← Only change: added NextFunction param so Socket.IO requests pass through
+const notFound = (req, res, next) => {
+    if (req.path.startsWith('/socket.io')) {
+        next();
+        return;
+    }
     res.status(404).json({
         success: false,
         message: 'Route not found',

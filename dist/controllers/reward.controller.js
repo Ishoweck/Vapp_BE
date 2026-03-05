@@ -10,6 +10,7 @@ const Order_1 = __importDefault(require("../models/Order"));
 const PointsTransaction_1 = __importDefault(require("../models/PointsTransaction"));
 const Additional_1 = require("../models/Additional");
 const error_1 = require("../middleware/error");
+const notification_service_1 = require("../services/notification.service");
 const logger_1 = require("../utils/logger");
 class RewardController {
     /**
@@ -75,6 +76,13 @@ class RewardController {
             description,
             metadata,
         });
+        // Notify user
+        try {
+            await notification_service_1.notificationService.pointsEarned(userId, points, description);
+        }
+        catch (error) {
+            logger_1.logger.error('Error sending points notification:', error);
+        }
         logger_1.logger.info(`Points awarded: ${points} to user ${userId} - ${description}`);
     }
     /**
@@ -124,6 +132,13 @@ class RewardController {
         });
         await wallet.save();
         logger_1.logger.info(`Points redeemed: ${points} by user ${req.user?.id}`);
+        // Notify user
+        try {
+            await notification_service_1.notificationService.pointsRedeemed(req.user.id, points, cashValue);
+        }
+        catch (error) {
+            logger_1.logger.error('Error sending redeem notification:', error);
+        }
         res.json({
             success: true,
             message: 'Points redeemed successfully',
@@ -149,6 +164,13 @@ class RewardController {
         if (!user.badges.includes(badge)) {
             user.badges.push(badge);
             await user.save();
+            // Notify user
+            try {
+                await notification_service_1.notificationService.badgeEarned(userId, badge);
+            }
+            catch (error) {
+                logger_1.logger.error('Error sending badge notification:', error);
+            }
             logger_1.logger.info(`Badge awarded: ${badge} to user ${userId}`);
         }
     }

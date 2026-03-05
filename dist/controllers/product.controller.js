@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -7,9 +40,11 @@ exports.productController = exports.ProductController = void 0;
 const types_1 = require("../types");
 const Product_1 = __importDefault(require("../models/Product"));
 const Category_1 = __importDefault(require("../models/Category"));
+const VendorProfile_1 = __importDefault(require("../models/VendorProfile"));
 const error_1 = require("../middleware/error");
 const helpers_1 = require("../utils/helpers");
 const cloudinary_1 = require("../utils/cloudinary");
+const notification_service_1 = require("../services/notification.service");
 class ProductController {
     // COMPLETE FIXED createProduct method for product.controller.ts
     async createProduct(req, res) {
@@ -68,6 +103,17 @@ class ProductController {
             }
             // Format product for response
             const formattedProduct = this.formatProduct(product);
+            // Notify vendor followers about new product
+            try {
+                const vendorProfile = await VendorProfile_1.default.findOne({ user: req.user?.id }).select('followers businessName');
+                if (vendorProfile && vendorProfile.followers && vendorProfile.followers.length > 0) {
+                    const followerIds = vendorProfile.followers.map((f) => f.toString());
+                    await notification_service_1.notificationService.newProductFromFollowedVendor(followerIds, vendorProfile.businessName || 'A vendor you follow', product.name, product._id.toString());
+                }
+            }
+            catch (error) {
+                console.error('Error sending new product notification:', error);
+            }
             console.log('✅ Sending success response to frontend');
             // ✅ SEND RESPONSE
             res.status(201).json({
@@ -180,7 +226,6 @@ class ProductController {
             data: this.formatProduct(product),
         });
     }
-    // ADD THIS METHOD TO ProductController class in product.controller.ts
     // NEW: Get My Products (for authenticated vendor)
     async getMyProducts(req, res) {
         const page = parseInt(req.query.page) || 1;
@@ -508,6 +553,79 @@ class ProductController {
             }
         });
     }
+    // Add this method to your ProductController class in product.controller.ts
+    /**
+     * Get Similar Products
+     * Returns products from the same category and/or vendor, excluding the current product
+     */
+    async getSimilarProducts(req, res) {
+        const { id } = req.params;
+        const limit = parseInt(req.query.limit) || 10;
+        // Get the current product to find its category and vendor
+        const currentProduct = await Product_1.default.findById(id).lean();
+        if (!currentProduct) {
+            throw new error_1.AppError('Product not found', 404);
+        }
+        // Strategy: same category first, then same vendor, then fallback to popular
+        let products = [];
+        // 1. Same category products (excluding current)
+        if (currentProduct.category) {
+            const categoryProducts = await Product_1.default.find({
+                _id: { $ne: id },
+                status: types_1.ProductStatus.ACTIVE,
+                category: currentProduct.category,
+                quantity: { $gt: 0 },
+            })
+                .populate('vendor', 'firstName lastName profileImage')
+                .populate('category', 'name')
+                .sort({ averageRating: -1, totalSales: -1 })
+                .limit(limit)
+                .lean();
+            products = categoryProducts;
+        }
+        // 2. If not enough, fill with same vendor products
+        if (products.length < limit) {
+            const existingIds = [id, ...products.map((p) => p._id.toString())];
+            const remaining = limit - products.length;
+            const vendorProducts = await Product_1.default.find({
+                _id: { $nin: existingIds },
+                status: types_1.ProductStatus.ACTIVE,
+                vendor: currentProduct.vendor,
+                quantity: { $gt: 0 },
+            })
+                .populate('vendor', 'firstName lastName profileImage')
+                .populate('category', 'name')
+                .sort({ averageRating: -1, totalSales: -1 })
+                .limit(remaining)
+                .lean();
+            products = [...products, ...vendorProducts];
+        }
+        // 3. If still not enough, fill with popular products
+        if (products.length < limit) {
+            const existingIds = [id, ...products.map((p) => p._id.toString())];
+            const remaining = limit - products.length;
+            const popularProducts = await Product_1.default.find({
+                _id: { $nin: existingIds },
+                status: types_1.ProductStatus.ACTIVE,
+                quantity: { $gt: 0 },
+            })
+                .populate('vendor', 'firstName lastName profileImage')
+                .populate('category', 'name')
+                .sort({ totalSales: -1, views: -1, averageRating: -1 })
+                .limit(remaining)
+                .lean();
+            products = [...products, ...popularProducts];
+        }
+        const formattedProducts = products.map(this.formatProduct);
+        res.json({
+            success: true,
+            message: 'Similar products fetched successfully',
+            data: {
+                products: formattedProducts,
+                total: formattedProducts.length,
+            },
+        });
+    }
     async updateProduct(req, res) {
         const product = await Product_1.default.findById(req.params.id);
         if (!product) {
@@ -516,8 +634,23 @@ class ProductController {
         if (product.vendor.toString() !== req.user?.id) {
             throw new error_1.AppError('Not authorized', 403);
         }
+        const oldPrice = product.price;
         Object.assign(product, req.body);
         await product.save();
+        // Notify wishlisted users about price drop
+        if (req.body.price && req.body.price < oldPrice) {
+            try {
+                const { Wishlist } = await Promise.resolve().then(() => __importStar(require('../models/Additional')));
+                const wishlists = await Wishlist.find({ 'items.product': product._id }).select('user');
+                const userIds = wishlists.map((w) => w.user.toString());
+                if (userIds.length > 0) {
+                    await notification_service_1.notificationService.priceDrop(userIds, product.name, oldPrice, req.body.price, product._id.toString());
+                }
+            }
+            catch (error) {
+                console.error('Error sending price drop notification:', error);
+            }
+        }
         res.json({
             success: true,
             message: 'Product updated successfully',

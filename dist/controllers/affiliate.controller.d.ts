@@ -20,6 +20,9 @@ export declare class AffiliateController {
     /**
      * Get affiliate dashboard
      */
+    /**
+   * Get affiliate dashboard
+   */
     getAffiliateDashboard(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
     /**
      * Get affiliate earnings

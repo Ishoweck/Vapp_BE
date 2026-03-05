@@ -21,7 +21,13 @@ const wishlist_routes_1 = __importDefault(require("./wishlist.routes"));
 const notification_routes_1 = __importDefault(require("./notification.routes"));
 const search_routes_1 = __importDefault(require("./search.routes"));
 const address_routes_1 = __importDefault(require("./address.routes"));
-const upload_routes_1 = __importDefault(require("./upload.routes")); // ✅ ADD THIS
+const upload_routes_1 = __importDefault(require("./upload.routes"));
+const account_deletion_routes_1 = __importDefault(require("./account-deletion.routes"));
+const webhook_routes_1 = __importDefault(require("./webhook.routes"));
+const question_routes_1 = __importDefault(require("./question.routes"));
+const dispute_routes_1 = __importDefault(require("./dispute.routes"));
+const message_routes_1 = __importDefault(require("./message.routes"));
+const admin_routes_1 = __importDefault(require("./admin.routes"));
 const router = (0, express_1.Router)();
 router.use('/auth', auth_routes_1.default);
 router.use('/products', product_routes_1.default);
@@ -40,7 +46,13 @@ router.use('/wishlist', wishlist_routes_1.default);
 router.use('/notifications', notification_routes_1.default);
 router.use('/search', search_routes_1.default);
 router.use('/addresses', address_routes_1.default);
-router.use('/upload', upload_routes_1.default); // ✅ ADD THIS
+router.use('/upload', upload_routes_1.default);
+router.use('/account-deletion', account_deletion_routes_1.default);
+router.use('/webhooks', webhook_routes_1.default);
+router.use('/questions', question_routes_1.default);
+router.use('/disputes', dispute_routes_1.default);
+router.use('/messages', message_routes_1.default);
+router.use('/admin', admin_routes_1.default);
 // Health check
 router.get('/health', (req, res) => {
     res.json({

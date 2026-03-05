@@ -46,12 +46,20 @@ const email_1 = require("../utils/email");
 const error_1 = require("../middleware/error");
 const crypto_1 = __importDefault(require("crypto"));
 const email_queue_1 = require("../utils/email-queue");
+const cloudinary_1 = require("../utils/cloudinary");
+const notification_service_1 = require("../services/notification.service");
 class AuthController {
     /**
      * Register new user
      */
     async register(req, res) {
-        const { firstName, lastName, email, phone, password, role } = req.body;
+        let { firstName, lastName, email, phone, password, role, fullName } = req.body;
+        // Support fullName field — split into firstName and lastName
+        if (fullName && (!firstName || !lastName)) {
+            const parts = fullName.trim().split(/\s+/);
+            firstName = parts[0];
+            lastName = parts.length > 1 ? parts.slice(1).join(' ') : parts[0];
+        }
         // Check if user exists
         const existingUser = await User_1.default.findOne({ email });
         if (existingUser) {
@@ -121,6 +129,22 @@ class AuthController {
             () => (0, email_1.sendFounderWelcomeEmail)(user.email),
             () => (0, email_1.sendProductPostingGuideEmail)(user.email),
         ], 10000); // 10 seconds between each email
+        // Send welcome notification
+        try {
+            await notification_service_1.notificationService.welcomeNotification(user._id.toString(), user.firstName);
+        }
+        catch (error) {
+            // Non-critical, don't throw
+        }
+        // Notify referrer if this user was referred
+        if (user.referredBy) {
+            try {
+                await notification_service_1.notificationService.referralSignup(user.referredBy.toString(), `${user.firstName} ${user.lastName}`);
+            }
+            catch (error) {
+                // Non-critical
+            }
+        }
         // Generate tokens
         const tokens = (0, jwt_1.generateTokens)(user._id, user.email, user.role);
         res.json({
@@ -165,7 +189,6 @@ class AuthController {
             message: 'OTP sent successfully',
         });
     }
-    // controllers/auth.controller.ts - ADD THIS METHOD TO YOUR AuthController CLASS
     /**
      * Login with daily login bonus
      */
@@ -213,7 +236,6 @@ class AuthController {
             },
         });
     }
-    // controllers/auth.controller.ts - UPDATE THE LOGIN POINTS METHOD
     /**
      * Award daily login points with streak tracking and transaction logging
      */
@@ -295,50 +317,63 @@ class AuthController {
         }
     }
     /**
-     * Forgot password
-     */
+    * Forgot password - Generate and send reset OTP
+    */
     async forgotPassword(req, res) {
         const { email } = req.body;
         const user = await User_1.default.findOne({ email });
         if (!user) {
-            // Don't reveal if email exists
+            // Don't reveal if email exists for security
             res.json({
                 success: true,
-                message: 'If email exists, password reset link has been sent',
+                message: 'If email exists, password reset code has been sent',
             });
             return;
         }
-        // Generate reset token
-        const resetToken = crypto_1.default.randomBytes(32).toString('hex');
-        const hashedToken = crypto_1.default.createHash('sha256').update(resetToken).digest('hex');
-        user.resetPasswordToken = hashedToken;
+        // Generate OTP
+        const otpCode = (0, helpers_1.generateOTP)();
+        const hashedCode = crypto_1.default.createHash('sha256').update(otpCode).digest('hex');
+        user.resetPasswordToken = hashedCode;
         user.resetPasswordExpires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
         await user.save();
-        // Send reset email
-        await (0, email_1.sendPasswordResetEmail)(email, resetToken);
+        // Send reset email with OTP
+        await (0, email_1.sendPasswordResetEmail)(email, otpCode);
+        console.log(`🔐 Password reset OTP generated for ${email}: ${otpCode}`);
         res.json({
             success: true,
-            message: 'Password reset link sent to email',
+            message: 'Password reset code sent to email',
         });
     }
     /**
-     * Reset password
+     * Reset password with OTP code
      */
     async resetPassword(req, res) {
-        const { token, password } = req.body;
-        const hashedToken = crypto_1.default.createHash('sha256').update(token).digest('hex');
+        console.log('🔍 Reset password request body:', JSON.stringify(req.body, null, 2));
+        const { code, password, token } = req.body;
+        // Accept both 'code' and 'token' for backwards compatibility
+        const resetCode = code || token;
+        if (!resetCode || !password) {
+            console.log('❌ Missing fields - code:', !!resetCode, 'password:', !!password);
+            throw new error_1.AppError('Reset code and new password are required', 400);
+        }
+        const normalizedCode = resetCode.trim();
+        console.log('🔐 Normalized code:', normalizedCode);
+        const hashedCode = crypto_1.default.createHash('sha256').update(normalizedCode).digest('hex');
         const user = await User_1.default.findOne({
-            resetPasswordToken: hashedToken,
+            resetPasswordToken: hashedCode,
             resetPasswordExpires: { $gt: Date.now() },
         });
         if (!user) {
-            throw new error_1.AppError('Invalid or expired reset token', 400);
+            console.log('❌ No user found with valid reset code');
+            throw new error_1.AppError('Invalid or expired reset code', 400);
         }
+        console.log('✅ User found:', user.email);
         // Update password
         user.password = password;
         user.resetPasswordToken = undefined;
         user.resetPasswordExpires = undefined;
         await user.save();
+        console.log(`✅ Password reset successful for ${user.email}`);
         res.json({
             success: true,
             message: 'Password reset successful',
@@ -417,6 +452,22 @@ class AuthController {
             message: 'Profile updated successfully',
             data: { user },
         });
+    }
+    // In auth.controller.ts
+    async updateAvatar(req, res) {
+        const { base64Image } = req.body;
+        const user = await User_1.default.findById(req.user?.id);
+        if (!user)
+            throw new error_1.AppError('User not found', 404);
+        // Delete old avatar if exists
+        if (user.avatar) {
+            const oldPublicId = user.avatar.split('/').slice(-2).join('/').split('.')[0];
+            await (0, cloudinary_1.deleteFromCloudinary)(oldPublicId).catch(() => { });
+        }
+        const { url } = await (0, cloudinary_1.uploadToCloudinary)(base64Image, 'avatars');
+        user.avatar = url;
+        await user.save();
+        res.json({ success: true, message: 'Avatar updated', data: { avatar: url } });
     }
     /**
      * Change password

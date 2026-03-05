@@ -8,6 +8,7 @@ var UserRole;
     UserRole["VENDOR"] = "vendor";
     UserRole["ADMIN"] = "admin";
     UserRole["SUPER_ADMIN"] = "super_admin";
+    UserRole["FINANCIAL_ADMIN"] = "financial_admin";
     UserRole["AFFILIATE"] = "affiliate";
 })(UserRole || (exports.UserRole = UserRole = {}));
 // User Status
@@ -45,6 +46,7 @@ var OrderStatus;
     OrderStatus["CANCELLED"] = "cancelled";
     OrderStatus["REFUNDED"] = "refunded";
     OrderStatus["FAILED"] = "failed";
+    OrderStatus["DISPUTED"] = "disputed";
 })(OrderStatus || (exports.OrderStatus = OrderStatus = {}));
 // Payment Status
 var PaymentStatus;
@@ -59,8 +61,8 @@ var PaymentStatus;
 var PaymentMethod;
 (function (PaymentMethod) {
     PaymentMethod["PAYSTACK"] = "paystack";
+    PaymentMethod["FLUTTERWAVE"] = "flutterwave";
     PaymentMethod["WALLET"] = "wallet";
-    PaymentMethod["CASH_ON_DELIVERY"] = "cash_on_delivery";
 })(PaymentMethod || (exports.PaymentMethod = PaymentMethod = {}));
 // Transaction Types
 var TransactionType;

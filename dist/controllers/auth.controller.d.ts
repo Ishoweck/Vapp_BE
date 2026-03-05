@@ -22,11 +22,11 @@ export declare class AuthController {
      */
     private awardDailyLoginPoints;
     /**
-     * Forgot password
-     */
+    * Forgot password - Generate and send reset OTP
+    */
     forgotPassword(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
     /**
-     * Reset password
+     * Reset password with OTP code
      */
     resetPassword(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
     /**
@@ -41,6 +41,7 @@ export declare class AuthController {
      * Update profile
      */
     updateProfile(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
+    updateAvatar(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
     /**
      * Change password
      */

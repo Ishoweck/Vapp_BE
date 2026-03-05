@@ -7,16 +7,19 @@ exports.reviewController = exports.ReviewController = void 0;
 const Review_1 = __importDefault(require("../models/Review"));
 const Product_1 = __importDefault(require("../models/Product"));
 const Order_1 = __importDefault(require("../models/Order"));
+const User_1 = __importDefault(require("../models/User"));
 const error_1 = require("../middleware/error");
+const notification_service_1 = require("../services/notification.service");
 const logger_1 = require("../utils/logger");
 class ReviewController {
     /**
      * Create review
      */
     async createReview(req, res) {
-        const { productId, rating, comment, images } = req.body;
-        // Check if user has purchased this product
+        const { productId, orderId, rating, comment, images } = req.body;
+        // Check if user has purchased this product in this order
         const hasPurchased = await Order_1.default.findOne({
+            _id: orderId,
             user: req.user?.id,
             'items.product': productId,
             paymentStatus: 'completed',
@@ -24,10 +27,11 @@ class ReviewController {
         if (!hasPurchased) {
             throw new error_1.AppError('You can only review products you have purchased', 400);
         }
-        // Check if user has already reviewed
+        // Check if user has already reviewed this product for this order
         const existingReview = await Review_1.default.findOne({
             user: req.user?.id,
             product: productId,
+            order: orderId,
         });
         if (existingReview) {
             throw new error_1.AppError('You have already reviewed this product', 400);
@@ -36,13 +40,25 @@ class ReviewController {
         const review = await Review_1.default.create({
             user: req.user?.id,
             product: productId,
+            order: orderId,
             rating,
             comment,
             images: images || [],
         });
         // Update product rating
         await this.updateProductRating(productId);
-        logger_1.logger.info(`Review created: ${review._id} for product ${productId}`);
+        // Notify vendor about new review
+        try {
+            const product = await Product_1.default.findById(productId).select('vendor name');
+            const reviewer = await User_1.default.findById(req.user?.id).select('firstName lastName');
+            if (product && reviewer) {
+                await notification_service_1.notificationService.newReviewOnProduct(product.vendor.toString(), product.name, rating, `${reviewer.firstName} ${reviewer.lastName}`);
+            }
+        }
+        catch (error) {
+            logger_1.logger.error('Error sending review notification:', error);
+        }
+        logger_1.logger.info(`Review created: ${review._id} for product ${productId} on order ${orderId}`);
         res.status(201).json({
             success: true,
             message: 'Review created successfully',

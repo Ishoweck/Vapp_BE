@@ -45,6 +45,8 @@ export interface IChatMessage extends Document {
     orderId?: Types.ObjectId;
     read: boolean;
     readAt?: Date;
+    deleted: boolean;
+    deletedAt?: Date;
 }
 export interface IWishlist extends Document {
     user: Types.ObjectId;

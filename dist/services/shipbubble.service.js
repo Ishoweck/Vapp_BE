@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.shipBubbleService = exports.ShipBubbleService = void 0;
 // services/shipbubble.service.ts
+// ✅ FIXED: Removed hardcoded service_type: 'pickup' to get ALL courier options
 const axios_1 = __importDefault(require("axios"));
 const logger_1 = require("../utils/logger");
 const SHIPBUBBLE_API_KEY = process.env.SHIPBUBBLE_API_KEY || '';
@@ -107,12 +108,14 @@ class ShipBubbleService {
     }
     /**
      * Get delivery rates using ShipBubble's fetch_rates endpoint
+     * ✅ FIXED: Removed hardcoded service_type to get ALL courier types
      */
     async getDeliveryRates(senderAddress, receiverAddress, packageItems, packageDimension, categoryId // Allow custom category
     ) {
         try {
-            logger_1.logger.info('📦 Fetching ShipBubble delivery rates');
-            // 🔍 LOG BOTH ADDRESSES BEFORE VALIDATION
+            logger_1.logger.info('📦 ============================================');
+            logger_1.logger.info('📦 FETCHING SHIPBUBBLE DELIVERY RATES');
+            logger_1.logger.info('📦 ============================================');
             logger_1.logger.info('🔍 ================ SENDER ADDRESS ================');
             logger_1.logger.info('📤 Sender Details:', {
                 name: senderAddress.name,
@@ -163,11 +166,13 @@ class ShipBubbleService {
             tomorrow.setDate(tomorrow.getDate() + 1);
             const pickupDate = tomorrow.toISOString().split('T')[0]; // yyyy-mm-dd
             // Step 3: Determine category - use provided or default to Electronics and gadgets
-            const selectedCategoryId = categoryId || 77179563; // Default to Electronics and gadgets (77179563)
+            const selectedCategoryId = categoryId || 77179563;
             // Step 4: Fetch rates
+            // ✅ FIX: Do NOT hardcode service_type — let ShipBubble return ALL courier types
+            //         Previously had `service_type: 'pickup'` which filtered out dropoff-only couriers
             const requestBody = {
                 sender_address_code: senderValidated.address_code,
-                reciever_address_code: receiverValidated.address_code, // Note: ShipBubble uses 'reciever' (their spelling)
+                reciever_address_code: receiverValidated.address_code,
                 pickup_date: pickupDate,
                 category_id: selectedCategoryId,
                 package_items: packageItems,
@@ -176,7 +181,9 @@ class ShipBubbleService {
                     width: 20,
                     height: 20,
                 },
-                service_type: 'pickup',
+                // ✅ REMOVED: service_type: 'pickup'
+                // Without service_type, ShipBubble returns ALL available couriers
+                // (both pickup and dropoff) for the route, giving users more options
             };
             logger_1.logger.info('📡 ShipBubble fetch_rates request:', {
                 endpoint: `${SHIPBUBBLE_BASE_URL}/shipping/fetch_rates`,
@@ -185,24 +192,50 @@ class ShipBubbleService {
                 pickupDate,
                 categoryId: selectedCategoryId,
                 itemCount: packageItems.length,
+                packageItems: packageItems,
             });
+            logger_1.logger.info('📤 Full request body:', JSON.stringify(requestBody, null, 2));
             const response = await axios_1.default.post(`${SHIPBUBBLE_BASE_URL}/shipping/fetch_rates`, requestBody, { headers: this.headers, timeout: 30000 });
-            logger_1.logger.info('✅ ShipBubble rates retrieved:', {
-                status: response.data.status,
-                courierCount: response.data.data?.couriers?.length || 0,
-                requestToken: response.data.data?.request_token,
-                hasCheapest: !!response.data.data?.cheapest_courier,
-                hasFastest: !!response.data.data?.fastest_courier,
-            });
+            logger_1.logger.info('📥 ========================================');
+            logger_1.logger.info('📥 SHIPBUBBLE RATES RESPONSE');
+            logger_1.logger.info('📥 ========================================');
+            logger_1.logger.info('📥 Status Code:', response.status);
+            logger_1.logger.info('📥 Response Status:', response.data.status);
+            logger_1.logger.info('📥 Response Message:', response.data.message);
+            logger_1.logger.info('📥 Full Response Data:', JSON.stringify(response.data.data, null, 2));
+            if (response.data.data) {
+                logger_1.logger.info('📥 Response Details:', {
+                    requestToken: response.data.data.request_token,
+                    courierCount: response.data.data.couriers?.length || 0,
+                    hasCheapest: !!response.data.data.cheapest_courier,
+                    hasFastest: !!response.data.data.fastest_courier,
+                    hasBestValue: !!response.data.data.best_value_courier,
+                });
+                if (response.data.data.couriers) {
+                    logger_1.logger.info('📦 Available Couriers:');
+                    response.data.data.couriers.forEach((courier, index) => {
+                        logger_1.logger.info(`  ${index + 1}. ${courier.courier_name}:`, {
+                            courier_id: courier.courier_id,
+                            service_code: courier.service_code,
+                            service_type: courier.service_type,
+                            price: courier.total || courier.rate_card_amount,
+                            eta: courier.delivery_eta,
+                            pickup_eta: courier.pickup_eta,
+                        });
+                    });
+                }
+            }
+            logger_1.logger.info('✅ ShipBubble rates retrieved successfully');
             return response.data;
         }
         catch (error) {
-            logger_1.logger.error('❌ ShipBubble fetch_rates error:', {
-                message: error.message,
-                status: error.response?.status,
-                statusText: error.response?.statusText,
-                data: error.response?.data,
-            });
+            logger_1.logger.error('❌ ========================================');
+            logger_1.logger.error('❌ SHIPBUBBLE FETCH_RATES ERROR');
+            logger_1.logger.error('❌ ========================================');
+            logger_1.logger.error('❌ Error Message:', error.message);
+            logger_1.logger.error('❌ Response Status:', error.response?.status);
+            logger_1.logger.error('❌ Response Status Text:', error.response?.statusText);
+            logger_1.logger.error('❌ Response Data:', JSON.stringify(error.response?.data, null, 2));
             if (error.response?.status === 401) {
                 logger_1.logger.error('🔐 Unauthorized - Check your SHIPBUBBLE_API_KEY');
             }
@@ -327,30 +360,84 @@ class ShipBubbleService {
     }
     /**
      * Create shipment (book a shipment after getting rates)
+     * ✅ UPDATED TO SUPPORT service_code
      */
-    async createShipment(requestToken, courierId, isInvoiceRequired = false) {
+    async createShipment(requestToken, courierId, serviceCode, isInvoiceRequired = false) {
         try {
-            logger_1.logger.info('📦 Creating ShipBubble shipment:', {
+            logger_1.logger.info('📦 ========================================');
+            logger_1.logger.info('📦 CREATE SHIPMENT API CALL');
+            logger_1.logger.info('📦 ========================================');
+            logger_1.logger.info('📤 Request parameters:', {
                 requestToken,
                 courierId,
+                serviceCode,
+                isInvoiceRequired,
             });
-            const response = await axios_1.default.post(`${SHIPBUBBLE_BASE_URL}/shipping/labels`, {
+            const requestBody = {
                 request_token: requestToken,
                 courier_id: courierId,
                 is_invoice_required: isInvoiceRequired,
-            }, { headers: this.headers });
+            };
+            // ✅ Add service_code if provided
+            if (serviceCode) {
+                requestBody.service_code = serviceCode;
+            }
+            logger_1.logger.info('📤 Full request body:', requestBody);
+            logger_1.logger.info('📤 Endpoint:', `${SHIPBUBBLE_BASE_URL}/shipping/labels`);
+            logger_1.logger.info('📤 Headers:', {
+                Authorization: `Bearer ${SHIPBUBBLE_API_KEY ? '***' + SHIPBUBBLE_API_KEY.slice(-4) : 'NOT SET'}`,
+                'Content-Type': 'application/json',
+            });
+            const response = await axios_1.default.post(`${SHIPBUBBLE_BASE_URL}/shipping/labels`, requestBody, { headers: this.headers });
+            logger_1.logger.info('📥 ========================================');
+            logger_1.logger.info('📥 CREATE SHIPMENT RESPONSE');
+            logger_1.logger.info('📥 ========================================');
+            logger_1.logger.info('📥 Status Code:', response.status);
+            logger_1.logger.info('📥 Full Response:', JSON.stringify(response.data, null, 2));
+            logger_1.logger.info('📥 Response Status:', response.data.status);
+            logger_1.logger.info('📥 Response Message:', response.data.message);
+            if (response.data.data) {
+                logger_1.logger.info('📥 Response Data:', {
+                    order_id: response.data.data.order_id,
+                    tracking_number: response.data.data.tracking_number,
+                    shipment_id: response.data.data.shipment_id,
+                    courier: response.data.data.courier,
+                    status: response.data.data.status,
+                    payment: response.data.data.payment,
+                });
+            }
             logger_1.logger.info('✅ ShipBubble shipment created:', {
                 trackingNumber: response.data.data?.tracking_number,
+                orderId: response.data.data?.order_id,
                 label: response.data.data?.label,
             });
             return response.data;
         }
         catch (error) {
-            logger_1.logger.error('❌ ShipBubble shipment creation error:', {
-                message: error.message,
-                status: error.response?.status,
-                data: error.response?.data,
+            logger_1.logger.error('❌ ========================================');
+            logger_1.logger.error('❌ CREATE SHIPMENT ERROR');
+            logger_1.logger.error('❌ ========================================');
+            logger_1.logger.error('❌ Error Message:', error.message);
+            logger_1.logger.error('❌ Response Status:', error.response?.status);
+            logger_1.logger.error('❌ Response Status Text:', error.response?.statusText);
+            logger_1.logger.error('❌ Response Headers:', error.response?.headers);
+            logger_1.logger.error('❌ Response Data:', JSON.stringify(error.response?.data, null, 2));
+            logger_1.logger.error('❌ Request Config:', {
+                url: error.config?.url,
+                method: error.config?.method,
+                data: error.config?.data,
             });
+            if (error.response?.status === 401) {
+                logger_1.logger.error('🔐 AUTHENTICATION ERROR - Check SHIPBUBBLE_API_KEY');
+            }
+            else if (error.response?.status === 400) {
+                logger_1.logger.error('⚠️ BAD REQUEST - Invalid parameters');
+                logger_1.logger.error('⚠️ Validation errors:', error.response?.data?.errors);
+            }
+            else if (error.response?.status === 422) {
+                logger_1.logger.error('⚠️ UNPROCESSABLE ENTITY - Validation failed');
+                logger_1.logger.error('⚠️ Errors:', error.response?.data?.errors);
+            }
             throw new Error('Failed to create shipment');
         }
     }

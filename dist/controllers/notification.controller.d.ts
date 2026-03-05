@@ -22,6 +22,18 @@ export declare class NotificationController {
      */
     clearAll(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
     /**
+     * Register FCM token for push notifications
+     */
+    registerFcmToken(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
+    /**
+     * Unregister FCM token
+     */
+    unregisterFcmToken(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
+    /**
+     * Get unread notification count
+     */
+    getUnreadCount(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
+    /**
      * Create notification (internal helper)
      */
     static createNotification(userId: string, type: NotificationType, title: string, message: string, data?: any, link?: string): Promise<void>;

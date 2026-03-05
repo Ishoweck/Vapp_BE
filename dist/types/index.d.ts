@@ -5,6 +5,7 @@ export declare enum UserRole {
     VENDOR = "vendor",
     ADMIN = "admin",
     SUPER_ADMIN = "super_admin",
+    FINANCIAL_ADMIN = "financial_admin",
     AFFILIATE = "affiliate"
 }
 export declare enum UserStatus {
@@ -33,7 +34,8 @@ export declare enum OrderStatus {
     DELIVERED = "delivered",
     CANCELLED = "cancelled",
     REFUNDED = "refunded",
-    FAILED = "failed"
+    FAILED = "failed",
+    DISPUTED = "disputed"
 }
 export declare enum PaymentStatus {
     PENDING = "pending",
@@ -44,8 +46,8 @@ export declare enum PaymentStatus {
 }
 export declare enum PaymentMethod {
     PAYSTACK = "paystack",
-    WALLET = "wallet",
-    CASH_ON_DELIVERY = "cash_on_delivery"
+    FLUTTERWAVE = "flutterwave",
+    WALLET = "wallet"
 }
 export declare enum TransactionType {
     CREDIT = "credit",
@@ -289,6 +291,8 @@ export interface IUserDocument extends Document {
         currentStreak: number;
         lastLoginDate: Date | null;
     };
+    oauthProvider?: 'google' | 'apple' | 'facebook';
+    oauthId?: string;
     comparePassword(candidatePassword: string): Promise<boolean>;
 }
 //# sourceMappingURL=index.d.ts.map

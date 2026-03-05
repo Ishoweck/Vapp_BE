@@ -3,7 +3,9 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.io = void 0;
 const express_1 = __importDefault(require("express"));
+const http_1 = __importDefault(require("http"));
 const dotenv_1 = __importDefault(require("dotenv"));
 const cors_1 = __importDefault(require("cors"));
 const helmet_1 = __importDefault(require("helmet"));
@@ -14,14 +16,22 @@ const database_1 = __importDefault(require("./config/database"));
 const routes_1 = __importDefault(require("./routes"));
 const error_1 = require("./middleware/error");
 const logger_1 = require("./utils/logger");
+const socket_1 = require("./config/socket");
 // Load environment variables
 dotenv_1.default.config();
 // Create Express app
 const app = (0, express_1.default)();
+// Create HTTP server (needed for Socket.io)
+const server = http_1.default.createServer(app);
 // Connect to database
 (0, database_1.default)();
+// Initialize Socket.io
+const io = (0, socket_1.initializeSocket)(server);
+exports.io = io;
+// Make io accessible to controllers via req.app
+app.set('io', io);
 // ============================================================
-// ✅ INCREASED TIMEOUT FOR LARGE UPLOADS
+// INCREASED TIMEOUT FOR LARGE UPLOADS
 // ============================================================
 app.use((req, res, next) => {
     // Set timeout to 3 minutes for all requests
@@ -30,29 +40,26 @@ app.use((req, res, next) => {
     next();
 });
 // ============================================================
-// ✅ BODY PARSER - ONLY ONCE with 50MB limit
+// BODY PARSER - ONLY ONCE with 50MB limit
 // ============================================================
 app.use(express_1.default.json({ limit: '50mb' }));
 app.use(express_1.default.urlencoded({ limit: '50mb', extended: true }));
 // Security middleware
 app.use((0, helmet_1.default)());
 app.use((0, cors_1.default)({
-    origin: process.env.FRONTEND_URL || '*',
+    origin: '*',
     credentials: true,
 }));
 // ============================================================
-// ✅ RELAXED RATE LIMITING FOR UPLOADS
+// RELAXED RATE LIMITING FOR UPLOADS
 // ============================================================
 const limiter = (0, express_rate_limit_1.default)({
     windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'), // 15 minutes
-    max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '200'), // ✅ Increased from 100 to 200
+    max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '200'),
     message: 'Too many requests from this IP, please try again later.',
-    skipSuccessfulRequests: true, // ✅ Don't count successful requests
+    skipSuccessfulRequests: true,
 });
 app.use('/api', limiter);
-// ❌ REMOVED DUPLICATE BODY PARSER - was overriding the 50mb limit above
-// app.use(express.json({ limit: '10mb' }));
-// app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // Compression
 app.use((0, compression_1.default)());
 // Logging
@@ -80,12 +87,13 @@ app.use(error_1.notFound);
 app.use(error_1.errorHandler);
 // Start server
 const PORT = process.env.PORT || 5000;
-const server = app.listen(PORT, () => {
+server.listen(PORT, () => {
     logger_1.logger.info(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
-    console.log(`🚀 Server started on http://localhost:${PORT}`);
-    console.log(`📚 API: http://localhost:${PORT}/api/${API_VERSION}`);
+    console.log(`Server started on http://localhost:${PORT}`);
+    console.log(`API: http://localhost:${PORT}/api/${API_VERSION}`);
+    console.log(`WebSocket: ws://localhost:${PORT}`);
 });
-// ✅ SET SERVER TIMEOUT
+// SET SERVER TIMEOUT
 server.timeout = 180000; // 3 minutes
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (err) => {

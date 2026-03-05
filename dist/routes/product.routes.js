@@ -21,6 +21,7 @@ router.get('/new-arrivals', (0, error_1.asyncHandler)(product_controller_1.produ
 router.get('/on-sale', (0, error_1.asyncHandler)(product_controller_1.productController.getProductsOnSale.bind(product_controller_1.productController)));
 // Get trending products
 router.get('/trending', (0, error_1.asyncHandler)(product_controller_1.productController.getTrendingProducts.bind(product_controller_1.productController)));
+router.get('/:id/similar', (0, error_1.asyncHandler)(product_controller_1.productController.getSimilarProducts.bind(product_controller_1.productController)));
 // Get products by category
 router.get('/category/:categoryId', (0, error_1.asyncHandler)(product_controller_1.productController.getProductsByCategory.bind(product_controller_1.productController)));
 // Get products by vendor (public - for viewing vendor's storefront)

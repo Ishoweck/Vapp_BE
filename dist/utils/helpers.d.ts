@@ -3,6 +3,11 @@
  */
 export declare const generateOTP: () => string;
 /**
+ * Generate 6-character alphanumeric reset code (uppercase letters and numbers)
+ * Example: ABC123, XY7Z4K, etc.
+ */
+export declare const generateResetCode: () => string;
+/**
  * Generate unique order number
  */
 export declare const generateOrderNumber: () => string;

@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.generateLicenseKey = exports.isStrongPassword = exports.getTimeAgo = exports.calculateAverageRating = exports.generateConversationId = exports.sanitizeInput = exports.isValidPhone = exports.isValidEmail = exports.formatCurrency = exports.calculateCommission = exports.calculateDiscount = exports.generateToken = exports.getPaginationMeta = exports.generateSlug = exports.generateSKU = exports.generateAffiliateCode = exports.generateOrderNumber = exports.generateOTP = void 0;
+exports.generateLicenseKey = exports.isStrongPassword = exports.getTimeAgo = exports.calculateAverageRating = exports.generateConversationId = exports.sanitizeInput = exports.isValidPhone = exports.isValidEmail = exports.formatCurrency = exports.calculateCommission = exports.calculateDiscount = exports.generateToken = exports.getPaginationMeta = exports.generateSlug = exports.generateSKU = exports.generateAffiliateCode = exports.generateOrderNumber = exports.generateResetCode = exports.generateOTP = void 0;
 const crypto_1 = __importDefault(require("crypto"));
 /**
  * Generate OTP code
@@ -12,6 +12,19 @@ const generateOTP = () => {
     return Math.floor(100000 + Math.random() * 900000).toString();
 };
 exports.generateOTP = generateOTP;
+/**
+ * Generate 6-character alphanumeric reset code (uppercase letters and numbers)
+ * Example: ABC123, XY7Z4K, etc.
+ */
+const generateResetCode = () => {
+    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let code = '';
+    for (let i = 0; i < 6; i++) {
+        code += characters.charAt(Math.floor(Math.random() * characters.length));
+    }
+    return code;
+};
+exports.generateResetCode = generateResetCode;
 /**
  * Generate unique order number
  */
