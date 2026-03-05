@@ -88,7 +88,13 @@ export const errorHandler = (
   });
 };
 
-export const notFound = (req: Request, res: Response<ApiResponse>): void => {
+// ← Only change: added NextFunction param so Socket.IO requests pass through
+export const notFound = (req: Request, res: Response<ApiResponse>, next: NextFunction): void => {
+  if (req.path.startsWith('/socket.io')) {
+    next();
+    return;
+  }
+
   res.status(404).json({
     success: false,
     message: 'Route not found',
