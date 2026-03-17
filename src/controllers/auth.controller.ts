@@ -4,7 +4,7 @@ import User from '../models/User';
 import { Wallet } from '../models/Additional';
 import { generateTokens, verifyRefreshToken } from '../utils/jwt';
 import { generateOTP, generateAffiliateCode, generateResetCode } from '../utils/helpers';
-import { sendOTPEmail, sendWelcomeEmail, sendPasswordResetEmail, sendFounderWelcomeEmail, sendProductPostingGuideEmail } from '../utils/email';
+import { sendOTPEmail, sendWelcomeEmail, sendPasswordResetEmail, sendFounderWelcomeEmail, sendProductPostingGuideEmail, sendBuyerFounderWelcomeEmail } from '../utils/email';
 import { AppError } from '../middleware/error';
 import crypto from 'crypto';
 import { queueEmailsInBackground } from '../utils/email-queue';
@@ -72,6 +72,54 @@ export class AuthController {
     });
   }
   /**
+   * Guest register - create account with just email
+   */
+  async guestRegister(req: AuthRequest, res: Response<ApiResponse>): Promise<void> {
+    const { email } = req.body;
+
+    // Check if user exists
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      throw new AppError('Email already registered. Please sign in.', 400);
+    }
+
+    // Generate random password
+    const randomPassword = crypto.randomBytes(8).toString('hex');
+
+    // Create user
+    const user = await User.create({
+      firstName: 'Guest',
+      lastName: 'User',
+      email,
+      password: randomPassword,
+      role: UserRole.CUSTOMER,
+      emailVerified: true,
+      status: UserStatus.ACTIVE,
+    });
+
+    // Create wallet for user
+    await Wallet.create({ user: user._id });
+
+    // Generate tokens
+    const tokens = generateTokens(user._id, user.email, user.role);
+
+    res.status(201).json({
+      success: true,
+      message: 'Guest registration successful',
+      data: {
+        user: {
+          id: user._id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          role: user.role,
+        },
+        ...tokens,
+      },
+    });
+  }
+
+  /**
    * Verify email with OTP
    */
  
@@ -102,11 +150,20 @@ async verifyEmail(req: AuthRequest, res: Response<ApiResponse>): Promise<void> {
   await user.save();
 
   // Queue welcome emails in background with 10 second delays
-  queueEmailsInBackground ([
-    () => sendWelcomeEmail(user.email, user.firstName),
-    () => sendFounderWelcomeEmail(user.email),
-    () => sendProductPostingGuideEmail(user.email),
-  ], 10000); // 10 seconds between each email
+  // Only send vendor-specific emails (founder welcome + product posting guide) to vendors
+  // Buyers get welcome email + buyer founder's note only
+  if (user.role === 'vendor') {
+    queueEmailsInBackground([
+      () => sendWelcomeEmail(user.email, user.firstName),
+      () => sendFounderWelcomeEmail(user.email),
+      () => sendProductPostingGuideEmail(user.email),
+    ], 10000);
+  } else {
+    queueEmailsInBackground([
+      () => sendWelcomeEmail(user.email, user.firstName),
+      () => sendBuyerFounderWelcomeEmail(user.email, user.firstName),
+    ], 10000);
+  }
 
   // Send welcome notification
   try {

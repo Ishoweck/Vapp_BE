@@ -224,10 +224,25 @@ async getProducts(req: AuthRequest, res: Response<ApiResponse>): Promise<void> {
     product.views += 1;
     await product.save();
 
+    const formatted = this.formatProduct(product);
+
+    // Enrich vendor with verification & premium status
+    if (product.vendor?._id) {
+      const VendorProfile = require('../models/VendorProfile').default;
+      const vendorProfile = await VendorProfile.findOne({ user: product.vendor._id })
+        .select('verificationStatus isPremium businessName businessLogo');
+      if (vendorProfile) {
+        formatted.vendor.verified = vendorProfile.verificationStatus === 'verified';
+        formatted.vendor.isPremium = vendorProfile.isPremium || false;
+        if (vendorProfile.businessName) formatted.vendor.name = vendorProfile.businessName;
+        if (vendorProfile.businessLogo) formatted.vendor.image = vendorProfile.businessLogo;
+      }
+    }
+
     res.json({
       success: true,
       message: 'Product fetched successfully',
-      data: this.formatProduct(product),
+      data: formatted,
     });
   }
 
@@ -580,20 +595,55 @@ async getProducts(req: AuthRequest, res: Response<ApiResponse>): Promise<void> {
   async getTrendingProducts(req: AuthRequest, res: Response<ApiResponse>): Promise<void> {
     const limit = parseInt(req.query.limit as string) || 10;
 
-    // Trending = high sales + views in last 7 days
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    // Step 1: Try products with actual engagement (sales or views > 0) from last 30 days
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-    const products = await Product.find({ 
+    let products = await Product.find({
       status: ProductStatus.ACTIVE,
       quantity: { $gt: 0 },
-      updatedAt: { $gte: sevenDaysAgo }
+      $or: [
+        { totalSales: { $gt: 0 } },
+        { views: { $gt: 0 } }
+      ],
+      updatedAt: { $gte: thirtyDaysAgo }
     })
       .populate('vendor', 'firstName lastName profileImage')
       .populate('category', 'name')
       .sort({ totalSales: -1, views: -1, averageRating: -1 })
       .limit(limit)
       .lean();
+
+    // Step 2: If still not enough, get products with any engagement (no time filter)
+    if (products.length < limit) {
+      products = await Product.find({
+        status: ProductStatus.ACTIVE,
+        quantity: { $gt: 0 },
+        $or: [
+          { totalSales: { $gt: 0 } },
+          { views: { $gt: 0 } },
+          { averageRating: { $gt: 0 } }
+        ]
+      })
+        .populate('vendor', 'firstName lastName profileImage')
+        .populate('category', 'name')
+        .sort({ totalSales: -1, views: -1, averageRating: -1 })
+        .limit(limit)
+        .lean();
+    }
+
+    // Step 3: Last resort - newest products (still better than nothing)
+    if (products.length < limit) {
+      products = await Product.find({
+        status: ProductStatus.ACTIVE,
+        quantity: { $gt: 0 }
+      })
+        .populate('vendor', 'firstName lastName profileImage')
+        .populate('category', 'name')
+        .sort({ createdAt: -1 })
+        .limit(limit)
+        .lean();
+    }
 
     const formattedProducts = products.map(this.formatProduct);
 

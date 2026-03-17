@@ -3,6 +3,14 @@ import { Notification } from '../models/Additional';
 import User from '../models/User';
 import { sendPushNotification } from '../config/firebase';
 import { logger } from '../utils/logger';
+import { Server as SocketServer } from 'socket.io';
+
+// Socket.io instance - set from server.ts after initialization
+let ioInstance: SocketServer | null = null;
+
+export const setSocketInstance = (io: SocketServer) => {
+  ioInstance = io;
+};
 
 interface NotifyOptions {
   userId: string;
@@ -31,7 +39,7 @@ class NotificationService {
 
     try {
       // 1. Create in-app notification
-      await Notification.create({
+      const notification = await Notification.create({
         user: userId,
         type,
         title,
@@ -40,7 +48,25 @@ class NotificationService {
         link,
       });
 
-      // 2. Send push notification
+      // 2. Emit real-time socket event so frontend updates instantly
+      if (ioInstance) {
+        const unreadCount = await Notification.countDocuments({ user: userId, read: false });
+        ioInstance.to(`user_${userId}`).emit('new_notification', {
+          notification: {
+            _id: notification._id,
+            type,
+            title,
+            message,
+            data,
+            link,
+            read: false,
+            createdAt: (notification as any).createdAt,
+          },
+          unreadCount,
+        });
+      }
+
+      // 3. Send push notification
       const user = await User.findById(userId).select('fcmTokens');
       if (user?.fcmTokens && user.fcmTokens.length > 0) {
         const pushData: Record<string, string> = {
@@ -79,6 +105,21 @@ class NotificationService {
       await Notification.insertMany(docs);
     } catch (error: any) {
       logger.error('Bulk notification insert error:', error.message);
+    }
+
+    // Emit real-time socket events to each user
+    if (ioInstance) {
+      for (const userId of uniqueIds) {
+        try {
+          const unreadCount = await Notification.countDocuments({ user: userId, read: false });
+          ioInstance.to(`user_${userId}`).emit('new_notification', {
+            notification: { type, title, message, data, link, read: false, createdAt: new Date() },
+            unreadCount,
+          });
+        } catch (err) {
+          // Don't block on socket errors
+        }
+      }
     }
 
     // Send push notifications
@@ -392,9 +433,9 @@ class NotificationService {
     await this.send({
       userId,
       type: NotificationType.SYSTEM,
-      title: 'Points Redeemed',
-      message: `You redeemed ${points} points for ₦${cashValue.toLocaleString()}. The amount has been added to your wallet.`,
-      data: { points, cashValue },
+      title: 'VCredits Earned!',
+      message: `You converted ${points} points to ${cashValue.toLocaleString()} VCredits. Use them to pay for orders!`,
+      data: { points, vCredits: cashValue },
       link: '/wallet',
     });
   }

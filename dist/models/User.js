@@ -125,6 +125,22 @@ const userSchema = new mongoose_1.Schema({
         type: String,
         sparse: true,
     },
+    // Notification preferences
+    notificationPreferences: {
+        pushEnabled: { type: Boolean, default: true },
+        order: [{
+                id: String,
+                enabled: { type: Boolean, default: true },
+            }],
+        promo: [{
+                id: String,
+                enabled: { type: Boolean, default: true },
+            }],
+        social: [{
+                id: String,
+                enabled: { type: Boolean, default: true },
+            }],
+    },
 }, {
     timestamps: true,
 });

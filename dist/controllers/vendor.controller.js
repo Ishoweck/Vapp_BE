@@ -9,6 +9,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.vendorController = exports.VendorController = void 0;
+const axios_1 = __importDefault(require("axios"));
 const types_1 = require("../types");
 const VendorProfile_1 = __importDefault(require("../models/VendorProfile"));
 const Product_1 = __importDefault(require("../models/Product"));
@@ -43,9 +44,9 @@ class VendorController {
             .populate('user', 'firstName lastName')
             .sort(sortCriteria)
             .limit(limit)
-            .select('user businessName businessDescription businessLogo averageRating totalReviews totalSales followers');
+            .select('user businessName businessDescription businessLogo businessBanner businessAddress averageRating totalReviews totalSales followers verificationStatus isPremium');
         const vendorsWithDetails = await Promise.all(vendors.map(async (vendor) => {
-            const vendorUser = vendor.user; // Populated user object
+            const vendorUser = vendor.user;
             const productCount = await Product_1.default.countDocuments({
                 vendor: vendorUser._id,
                 status: 'active',
@@ -54,16 +55,21 @@ class VendorController {
             if (req.user?.id) {
                 isFollowing = vendor.followers?.some(id => id.toString() === req.user?.id) || false;
             }
+            const addr = vendor.businessAddress;
+            const location = addr ? [addr.city, addr.state].filter(Boolean).join(', ') : undefined;
             return {
                 id: vendorUser._id,
                 name: vendor.businessName,
                 description: vendor.businessDescription,
                 image: vendor.businessLogo || '',
+                coverImage: vendor.businessBanner || '',
+                location,
                 rating: vendor.averageRating || 0,
                 reviews: vendor.totalReviews || 0,
                 totalSales: vendor.totalSales || 0,
                 productCount,
                 verified: vendor.verificationStatus === types_1.VendorVerificationStatus.VERIFIED,
+                isPremium: vendor.isPremium || false,
                 followers: vendor.followers?.length || 0,
                 isFollowing,
             };
@@ -165,7 +171,7 @@ class VendorController {
             .sort({ createdAt: -1 })
             .skip(skip)
             .limit(limit)
-            .select('user businessName businessDescription businessLogo averageRating totalReviews totalSales followers');
+            .select('user businessName businessDescription businessLogo averageRating totalReviews totalSales followers verificationStatus');
         const total = await VendorProfile_1.default.countDocuments({
             followers: userId,
             isActive: true,
@@ -837,12 +843,73 @@ class VendorController {
                     storefront: vendorProfile.storefront,
                     socialMedia: vendorProfile.socialMedia,
                     verificationStatus: vendorProfile.verificationStatus,
+                    isPremium: vendorProfile.isPremium || false,
                     followersCount: vendorProfile.followers?.length || 0,
                     isFollowing,
                 },
                 products,
             },
         });
+    }
+    /**
+     * GET /api/v1/vendor/banks
+     * Get Nigerian banks list from Paystack API
+     */
+    async getBanks(req, res) {
+        const staticBanks = [
+            { name: 'Access Bank', code: '044' },
+            { name: 'Citibank Nigeria', code: '023' },
+            { name: 'Ecobank Nigeria', code: '050' },
+            { name: 'Fidelity Bank', code: '070' },
+            { name: 'First Bank of Nigeria', code: '011' },
+            { name: 'First City Monument Bank', code: '214' },
+            { name: 'Globus Bank', code: '00103' },
+            { name: 'Guaranty Trust Bank', code: '058' },
+            { name: 'Heritage Bank', code: '030' },
+            { name: 'Jaiz Bank', code: '301' },
+            { name: 'Keystone Bank', code: '082' },
+            { name: 'Kuda Bank', code: '50211' },
+            { name: 'Moniepoint MFB', code: '50515' },
+            { name: 'OPay', code: '999992' },
+            { name: 'PalmPay', code: '999991' },
+            { name: 'Parallex Bank', code: '526' },
+            { name: 'Polaris Bank', code: '076' },
+            { name: 'Providus Bank', code: '101' },
+            { name: 'Stanbic IBTC Bank', code: '221' },
+            { name: 'Standard Chartered Bank', code: '068' },
+            { name: 'Sterling Bank', code: '232' },
+            { name: 'SunTrust Bank', code: '100' },
+            { name: 'TAJBank', code: '302' },
+            { name: 'Titan Trust Bank', code: '102' },
+            { name: 'Union Bank of Nigeria', code: '032' },
+            { name: 'United Bank for Africa', code: '033' },
+            { name: 'Unity Bank', code: '215' },
+            { name: 'VFD Microfinance Bank', code: '566' },
+            { name: 'Wema Bank', code: '035' },
+            { name: 'Zenith Bank', code: '057' },
+        ];
+        try {
+            const paystackSecret = process.env.PAYSTACK_SECRET_KEY || process.env.NEXT_PUBLIC_PAYSTACK_TEST;
+            if (paystackSecret) {
+                const response = await axios_1.default.get('https://api.paystack.co/bank', {
+                    headers: { Authorization: `Bearer ${paystackSecret}` },
+                    params: { country: 'nigeria', perPage: 100 },
+                    timeout: 10000,
+                });
+                if (response.data?.status && response.data?.data) {
+                    const banks = response.data.data
+                        .filter((bank) => bank.active)
+                        .map((bank) => ({ name: bank.name, code: bank.code }))
+                        .sort((a, b) => a.name.localeCompare(b.name));
+                    res.json({ success: true, data: { banks } });
+                    return;
+                }
+            }
+        }
+        catch (error) {
+            logger_1.logger.warn('Paystack banks API unavailable, using static list');
+        }
+        res.json({ success: true, data: { banks: staticBanks } });
     }
 }
 exports.VendorController = VendorController;

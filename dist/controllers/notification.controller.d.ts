@@ -30,6 +30,14 @@ export declare class NotificationController {
      */
     unregisterFcmToken(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
     /**
+     * Get notification preferences
+     */
+    getPreferences(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
+    /**
+     * Update notification preferences
+     */
+    updatePreferences(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
+    /**
      * Get unread notification count
      */
     getUnreadCount(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;

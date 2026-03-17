@@ -28,6 +28,7 @@ const question_routes_1 = __importDefault(require("./question.routes"));
 const dispute_routes_1 = __importDefault(require("./dispute.routes"));
 const message_routes_1 = __importDefault(require("./message.routes"));
 const admin_routes_1 = __importDefault(require("./admin.routes"));
+const audit_routes_1 = __importDefault(require("./audit.routes"));
 const router = (0, express_1.Router)();
 router.use('/auth', auth_routes_1.default);
 router.use('/products', product_routes_1.default);
@@ -53,6 +54,7 @@ router.use('/questions', question_routes_1.default);
 router.use('/disputes', dispute_routes_1.default);
 router.use('/messages', message_routes_1.default);
 router.use('/admin', admin_routes_1.default);
+router.use('/admin/audit-logs', audit_routes_1.default);
 // Health check
 router.get('/health', (req, res) => {
     res.json({

@@ -3,6 +3,7 @@ import { AuthRequest, ApiResponse } from '../types';
 import { AppError } from '../middleware/error';
 import cloudinary from '../utils/cloudinary';
 import { logger } from '../utils/logger';
+import VendorProfile from '../models/VendorProfile';
 
 export class UploadController {
   /**
@@ -63,7 +64,7 @@ export class UploadController {
 
     const { type } = req.body; // 'CAC', 'ID_CARD', 'UTILITY_BILL', 'PASSPORT', 'DRIVERS_LICENSE'
 
-    const validTypes = ['CAC', 'ID_CARD', 'UTILITY_BILL', 'PASSPORT', 'DRIVERS_LICENSE'];
+    const validTypes = ['NIN', 'CAC', 'ID_CARD', 'UTILITY_BILL', 'PASSPORT', 'DRIVERS_LICENSE'];
     
     if (!type || !validTypes.includes(type)) {
       throw new AppError(`Invalid document type. Must be one of: ${validTypes.join(', ')}`, 400);
@@ -104,6 +105,22 @@ export class UploadController {
         type,
         url: cloudinaryResult.secure_url,
       });
+
+      // Save document to vendor profile immediately
+      const vendorProfile = await VendorProfile.findOne({ user: req.user?.id });
+      if (vendorProfile) {
+        // Remove any existing document of this type, then add the new one
+        vendorProfile.kycDocuments = vendorProfile.kycDocuments.filter(
+          (doc: any) => doc.type !== type
+        );
+        vendorProfile.kycDocuments.push({
+          type,
+          documentUrl: cloudinaryResult.secure_url,
+          verificationStatus: 'pending',
+        });
+        await vendorProfile.save();
+        logger.info(`KYC document saved to vendor profile: ${type}`);
+      }
 
       res.json({
         success: true,

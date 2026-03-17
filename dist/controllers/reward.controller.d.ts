@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest, ApiResponse } from '../types';
 export declare class RewardController {
+    private redemptionLocks;
     /**
      * Get user points and rewards
      */

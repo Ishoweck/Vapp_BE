@@ -19,6 +19,15 @@ const router = Router();
 // ============================================================
 
 /**
+ * GET /api/v1/vendor/banks
+ * Get Nigerian banks list from Paystack
+ */
+router.get(
+  '/banks',
+  asyncHandler(vendorController.getBanks.bind(vendorController))
+);
+
+/**
  * GET /api/v1/vendor/top
  * Get top vendors for home screen
  * Query: ?limit=10&sortBy=rating

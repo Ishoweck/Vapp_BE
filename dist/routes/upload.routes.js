@@ -5,7 +5,6 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const multer_1 = __importDefault(require("multer"));
-const path_1 = __importDefault(require("path"));
 const auth_1 = require("../middleware/auth");
 const error_1 = require("../middleware/error");
 const upload_controller_1 = require("../controllers/upload.controller");
@@ -35,17 +34,17 @@ const kycStorage = multer_1.default.memoryStorage();
 const kycUpload = (0, multer_1.default)({
     storage: kycStorage,
     limits: {
-        fileSize: 5 * 1024 * 1024, // 5MB
+        fileSize: 10 * 1024 * 1024, // 10MB
     },
     fileFilter: (req, file, cb) => {
-        const allowedTypes = /jpeg|jpg|png|pdf/;
-        const extname = allowedTypes.test(path_1.default.extname(file.originalname).toLowerCase());
+        // Accept any image or PDF — don't reject based on extension since
+        // mobile camera/gallery images may have non-standard names
         const mimetype = file.mimetype === 'application/pdf' || file.mimetype.startsWith('image/');
-        if (extname && mimetype) {
+        if (mimetype) {
             cb(null, true);
         }
         else {
-            cb(new Error('Only .jpeg, .jpg, .png, and .pdf files are allowed'));
+            cb(new Error('Only image files and PDFs are allowed'));
         }
     },
 });

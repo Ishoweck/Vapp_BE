@@ -27,6 +27,7 @@ export interface IVendorProfile extends Document {
   totalOrders: number;
   averageRating: number;
   totalReviews: number;
+  isPremium: boolean;
   isActive: boolean;
   storefront: {
     theme?: string;
@@ -76,7 +77,7 @@ const vendorProfileSchema = new Schema<IVendorProfile>({
   kycDocuments: [{
     type: {
       type: String,
-      enum: ['CAC', 'ID_CARD', 'PASSPORT', 'DRIVERS_LICENSE', 'UTILITY_BILL'],
+      enum: ['NIN', 'CAC', 'ID_CARD', 'PASSPORT', 'DRIVERS_LICENSE', 'UTILITY_BILL'],
       required: true,
     },
     documentUrl: {
@@ -132,6 +133,10 @@ const vendorProfileSchema = new Schema<IVendorProfile>({
   totalReviews: {
     type: Number,
     default: 0,
+  },
+  isPremium: {
+    type: Boolean,
+    default: false,
   },
   isActive: {
     type: Boolean,

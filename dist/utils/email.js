@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.sendProductPostingGuideEmail = exports.sendFounderWelcomeEmail = exports.sendOrderConfirmationEmail = exports.sendWelcomeEmail = exports.sendPasswordResetEmail = exports.sendOTPEmail = exports.sendEmail = void 0;
+exports.sendProductPostingGuideEmail = exports.sendBuyerFounderWelcomeEmail = exports.sendFounderWelcomeEmail = exports.sendOrderConfirmationEmail = exports.sendWelcomeEmail = exports.sendPasswordResetEmail = exports.sendOTPEmail = exports.sendEmail = void 0;
 const resend_1 = require("resend");
 const logger_1 = require("./logger");
 const dotenv_1 = __importDefault(require("dotenv"));
@@ -149,6 +149,61 @@ const sendFounderWelcomeEmail = async (email) => {
     });
 };
 exports.sendFounderWelcomeEmail = sendFounderWelcomeEmail;
+const sendBuyerFounderWelcomeEmail = async (email, firstName) => {
+    const html = `
+<!DOCTYPE html>
+<html>
+  <head>
+    <style>
+      .container { padding: 20px; font-family: Arial, sans-serif; color: #333; }
+      .subtext { font-size: 16px; margin-bottom: 20px; line-height: 1.6; }
+      .footer { font-size: 14px; color: #666; margin-top: 30px; }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h2>Hello ${firstName},</h2>
+
+      <p class="subtext">
+        Welcome to Vendorspot! I'm personally excited to have you join our growing community of shoppers.
+      </p>
+
+      <p class="subtext">
+        Vendorspot was built to give you a safer, more trusted way to shop online — connecting you with verified vendors and quality products all in one place.
+      </p>
+
+      <p class="subtext">
+        Here's what you can do to get started:
+      </p>
+
+      <ul style="font-size: 16px; line-height: 2;">
+        <li>Browse products from trusted vendors across Nigeria</li>
+        <li>Earn reward points every time you shop or log in daily</li>
+        <li>Refer friends and earn bonus points</li>
+        <li>Track your orders in real-time</li>
+      </ul>
+
+      <p class="subtext">
+        We're committed to making your shopping experience smooth, secure, and rewarding. If you ever need help, our support team is just a message away.
+      </p>
+
+      <p class="subtext">
+        Welcome once again — happy shopping!
+      </p>
+
+      <p class="footer">Warm regards,</p>
+      <p class="footer"><strong>Olayinka Olasunkanmi</strong><br>Founder, Vendorspot</p>
+    </div>
+  </body>
+</html>
+  `;
+    await (0, exports.sendEmail)({
+        to: email,
+        subject: "A Note from Our Founder — Welcome to Vendorspot!",
+        html,
+    });
+};
+exports.sendBuyerFounderWelcomeEmail = sendBuyerFounderWelcomeEmail;
 const sendProductPostingGuideEmail = async (email) => {
     const html = `
 <!DOCTYPE html>

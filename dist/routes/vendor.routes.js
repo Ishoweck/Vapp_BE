@@ -17,6 +17,11 @@ const router = (0, express_1.Router)();
 // PUBLIC ROUTES (No authentication required)
 // ============================================================
 /**
+ * GET /api/v1/vendor/banks
+ * Get Nigerian banks list from Paystack
+ */
+router.get('/banks', (0, error_1.asyncHandler)(vendor_controller_1.vendorController.getBanks.bind(vendor_controller_1.vendorController)));
+/**
  * GET /api/v1/vendor/top
  * Get top vendors for home screen
  * Query: ?limit=10&sortBy=rating

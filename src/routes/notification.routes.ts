@@ -10,6 +10,10 @@ router.use(authenticate);
 
 router.get('/', asyncHandler(notificationController.getNotifications.bind(notificationController)));
 
+// Notification preferences
+router.get('/preferences', asyncHandler(notificationController.getPreferences.bind(notificationController)));
+router.put('/preferences', asyncHandler(notificationController.updatePreferences.bind(notificationController)));
+
 router.get('/unread-count', asyncHandler(notificationController.getUnreadCount.bind(notificationController)));
 
 router.put('/mark-all-read', asyncHandler(notificationController.markAllAsRead.bind(notificationController)));

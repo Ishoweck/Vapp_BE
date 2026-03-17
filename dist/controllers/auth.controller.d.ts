@@ -6,6 +6,10 @@ export declare class AuthController {
      */
     register(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
     /**
+     * Guest register - create account with just email
+     */
+    guestRegister(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
+    /**
      * Verify email with OTP
      */
     verifyEmail(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;

@@ -694,7 +694,7 @@ class OrderController {
             });
             await wallet.save();
             order.paymentStatus = types_1.PaymentStatus.COMPLETED;
-            order.status = isDigitalOnly ? types_1.OrderStatus.DELIVERED : types_1.OrderStatus.CONFIRMED;
+            order.status = isDigitalOnly ? types_1.OrderStatus.DELIVERED : types_1.OrderStatus.PENDING;
             await order.save();
             logger_1.logger.info('✅ Wallet payment completed');
             // ✅ For digital products, instant delivery
@@ -794,12 +794,12 @@ class OrderController {
      * - NO order is created, NO cart is cleared
      */
     async initializePayment(req, res) {
-        const { shippingAddress, paymentMethod, notes, deliveryType = 'standard', selectedDeliveryPrice, selectedCourier, vendorBreakdown, } = req.body;
+        const { shippingAddress, paymentMethod, notes, deliveryType = 'standard', selectedDeliveryPrice, selectedCourier, vendorBreakdown, vCreditsAmount = 0, } = req.body;
         logger_1.logger.info('💳 ============================================');
         logger_1.logger.info('💳 INITIALIZE PAYMENT (NO ORDER YET)');
         logger_1.logger.info('💳 ============================================');
         // Wallet payments should go through createOrder directly
-        if (paymentMethod === types_1.PaymentMethod.WALLET) {
+        if (paymentMethod === types_1.PaymentMethod.WALLET && !vCreditsAmount) {
             throw new error_1.AppError('Wallet payments should use /orders/create endpoint directly', 400);
         }
         const cart = await Cart_1.default.findOne({ user: req.user?.id }).populate({
@@ -857,9 +857,33 @@ class OrderController {
         const discount = cart.discount;
         const tax = 0;
         const total = subtotal - discount + totalShippingCost + tax;
+        // Validate and apply VCredits (separate from wallet cash balance)
+        let validVCredits = 0;
+        if (vCreditsAmount > 0) {
+            const wallet = await Additional_1.Wallet.findOne({ user: req.user?.id });
+            if (!wallet || (wallet.vCredits || 0) < vCreditsAmount) {
+                throw new error_1.AppError('Insufficient VCredits balance', 400);
+            }
+            // Can't apply more VCredits than the total
+            validVCredits = Math.min(vCreditsAmount, total);
+            // Deduct from vCredits field (not wallet balance)
+            wallet.vCredits = (wallet.vCredits || 0) - validVCredits;
+            wallet.transactions.push({
+                type: types_1.TransactionType.DEBIT,
+                amount: validVCredits,
+                purpose: types_1.WalletPurpose.PURCHASE,
+                reference: `VCREDITS-HOLD-${Date.now()}`,
+                description: `VCredits applied to order (pending card payment)`,
+                status: 'completed',
+                timestamp: new Date(),
+            });
+            await wallet.save();
+            logger_1.logger.info(`💎 VCredits applied: ${validVCredits} — remaining to charge on card: ₦${total - validVCredits}`);
+        }
+        const cardChargeAmount = total - validVCredits;
         // Generate a reference for this payment attempt
         const paymentReference = (0, helpers_1.generateOrderNumber)();
-        logger_1.logger.info('💰 Payment calculation:', { subtotal, discount, totalShippingCost, total, paymentReference });
+        logger_1.logger.info('💰 Payment calculation:', { subtotal, discount, totalShippingCost, total, vCreditsApplied: validVCredits, cardChargeAmount, paymentReference });
         // Store checkout snapshot in a temporary collection or encode in metadata
         // We'll pass all checkout data as metadata so confirmPayment can reconstruct the order
         const checkoutSnapshot = {
@@ -878,6 +902,7 @@ class OrderController {
             total,
             couponCode: cart.couponCode,
             isDigitalOnly,
+            vCreditsApplied: validVCredits,
             paymentReference,
             cartId: cart._id.toString(),
             createdAt: new Date().toISOString(),
@@ -888,7 +913,7 @@ class OrderController {
             try {
                 const paystackResponse = await paystack_service_1.paystackService.initializePayment({
                     email: user.email,
-                    amount: total * 100,
+                    amount: cardChargeAmount * 100,
                     reference: paymentReference,
                     callback_url: `${process.env.FRONTEND_URL}/orders/${paymentReference}/payment-callback`,
                     metadata: {
@@ -915,7 +940,7 @@ class OrderController {
             try {
                 const flutterwaveResponse = await flutterwave_service_1.flutterwaveService.initializePayment({
                     tx_ref: paymentReference,
-                    amount: total,
+                    amount: cardChargeAmount,
                     currency: 'NGN',
                     redirect_url: `${process.env.FRONTEND_URL}/orders/${paymentReference}/payment-callback`,
                     customer: {
@@ -953,11 +978,15 @@ class OrderController {
         logger_1.logger.info('💳 ============================================');
         res.status(200).json({
             success: true,
-            message: 'Payment initialized. Complete payment to create your order.',
+            message: validVCredits > 0
+                ? `VCredits applied! Pay ₦${cardChargeAmount.toLocaleString()} with card to complete your order.`
+                : 'Payment initialized. Complete payment to create your order.',
             data: {
                 payment: paymentData,
                 checkoutSnapshot,
                 total,
+                vCreditsApplied: validVCredits,
+                cardChargeAmount,
                 isDigital: isDigitalOnly,
             },
         });
@@ -1176,7 +1205,7 @@ class OrderController {
             shippingCost: totalShippingCost,
             tax,
             total,
-            status: isDigitalOnly ? types_1.OrderStatus.DELIVERED : types_1.OrderStatus.CONFIRMED,
+            status: isDigitalOnly ? types_1.OrderStatus.DELIVERED : types_1.OrderStatus.PENDING,
             paymentStatus: types_1.PaymentStatus.COMPLETED,
             paymentMethod,
             paymentReference: reference,
@@ -1531,7 +1560,7 @@ class OrderController {
                 const isDigitalOnly = this.isDigitalOnly(order.items);
                 logger_1.logger.info('📦 Order type:', { isDigitalOnly });
                 order.paymentStatus = types_1.PaymentStatus.COMPLETED;
-                order.status = isDigitalOnly ? types_1.OrderStatus.DELIVERED : types_1.OrderStatus.CONFIRMED;
+                order.status = isDigitalOnly ? types_1.OrderStatus.DELIVERED : types_1.OrderStatus.PENDING;
                 await order.save();
                 logger_1.logger.info('✅ Order status updated:', {
                     status: order.status,

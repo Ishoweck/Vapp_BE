@@ -32,17 +32,17 @@ const kycStorage = multer.memoryStorage();
 const kycUpload = multer({
   storage: kycStorage,
   limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB
+    fileSize: 10 * 1024 * 1024, // 10MB
   },
   fileFilter: (req, file, cb) => {
-    const allowedTypes = /jpeg|jpg|png|pdf/;
-    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    // Accept any image or PDF — don't reject based on extension since
+    // mobile camera/gallery images may have non-standard names
     const mimetype = file.mimetype === 'application/pdf' || file.mimetype.startsWith('image/');
 
-    if (extname && mimetype) {
+    if (mimetype) {
       cb(null, true);
     } else {
-      cb(new Error('Only .jpeg, .jpg, .png, and .pdf files are allowed'));
+      cb(new Error('Only image files and PDFs are allowed'));
     }
   },
 });

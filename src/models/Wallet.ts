@@ -15,6 +15,7 @@ export interface IWalletTransaction {
 export interface IWallet extends Document {
   user: Types.ObjectId;
   balance: number;
+  vCredits: number;
   totalEarned: number;
   totalSpent: number;
   totalWithdrawn: number;
@@ -67,6 +68,11 @@ const walletSchema = new Schema<IWallet>({
     unique: true,
   },
   balance: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
+  vCredits: {
     type: Number,
     default: 0,
     min: 0,

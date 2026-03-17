@@ -3,8 +3,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getAccountDeletionRequests = exports.getNotificationHistory = exports.broadcastNotification = exports.deleteCategory = exports.updateCategory = exports.createCategory = exports.getAllCategories = exports.deleteCoupon = exports.updateCoupon = exports.createCoupon = exports.getAllCoupons = exports.addDisputeMessage = exports.resolveDispute = exports.markDisputeUnderReview = exports.getDisputeDetails = exports.getAllDisputes = exports.deleteReview = exports.updateReviewStatus = exports.getAllReviews = exports.processWithdrawal = exports.getPendingWithdrawals = exports.getAllTransactions = exports.getFinancialOverview = exports.processRefund = exports.updateOrderStatus = exports.getOrderDetails = exports.getAllOrders = exports.deleteProduct = exports.toggleProductFeatured = exports.updateProductStatus = exports.getProductDetails = exports.getAllProducts = exports.updateVendorCommission = exports.toggleVendorStatus = exports.verifyVendor = exports.getVendorDetails = exports.getAllVendors = exports.deleteUser = exports.updateUserRole = exports.updateUserStatus = exports.getUserDetails = exports.getAllUsers = exports.removeAdmin = exports.updateAdminRole = exports.getAllAdmins = exports.createAdmin = exports.getOrderAnalytics = exports.getUserAnalytics = exports.getRevenueAnalytics = exports.getDashboard = void 0;
-exports.globalSearch = exports.getActivityLog = exports.getProductReport = exports.getVendorReport = exports.getSalesReport = exports.deleteChallenge = exports.updateChallenge = exports.createChallenge = exports.getAllChallenges = exports.toggleAffiliateStatus = exports.getAllAffiliates = exports.rejectAccountDeletion = exports.approveAccountDeletion = void 0;
+exports.getNotificationHistory = exports.broadcastNotification = exports.deleteCategory = exports.updateCategory = exports.createCategory = exports.getAllCategories = exports.deleteCoupon = exports.updateCoupon = exports.createCoupon = exports.getAllCoupons = exports.addDisputeMessage = exports.resolveDispute = exports.markDisputeUnderReview = exports.getDisputeDetails = exports.getAllDisputes = exports.deleteReview = exports.updateReviewStatus = exports.getAllReviews = exports.processWithdrawal = exports.getPendingWithdrawals = exports.getAllTransactions = exports.getFinancialOverview = exports.processRefund = exports.updateOrderStatus = exports.getOrderDetails = exports.getAllOrders = exports.deleteProduct = exports.toggleProductFeatured = exports.updateProductStatus = exports.getProductDetails = exports.getAllProducts = exports.updateVendorCommission = exports.toggleVendorPremium = exports.toggleVendorStatus = exports.verifyVendor = exports.getVendorDetails = exports.getAllVendors = exports.deleteUser = exports.updateUserRole = exports.updateUserStatus = exports.getUserDetails = exports.getAllUsers = exports.removeAdmin = exports.updateAdminRole = exports.getAllAdmins = exports.createAdmin = exports.getOrderAnalytics = exports.getUserAnalytics = exports.getRevenueAnalytics = exports.getDashboard = void 0;
+exports.globalSearch = exports.getActivityLog = exports.getProductReport = exports.getVendorReport = exports.getSalesReport = exports.deleteChallenge = exports.updateChallenge = exports.createChallenge = exports.getAllChallenges = exports.toggleAffiliateStatus = exports.getAllAffiliates = exports.rejectAccountDeletion = exports.approveAccountDeletion = exports.getAccountDeletionRequests = void 0;
 const mongoose_1 = __importDefault(require("mongoose"));
 const types_1 = require("../types");
 const User_1 = __importDefault(require("../models/User"));
@@ -838,6 +838,25 @@ exports.toggleVendorStatus = (0, ayncHandler_1.asyncHandler)(async (req, res) =>
         success: true,
         message: `Vendor ${vendor.isActive ? 'activated' : 'deactivated'} successfully`,
         data: { isActive: vendor.isActive },
+    });
+});
+/**
+ * PUT /admin/vendors/:id/premium
+ * Toggle vendor premium status
+ */
+exports.toggleVendorPremium = (0, ayncHandler_1.asyncHandler)(async (req, res) => {
+    const { id } = req.params;
+    const vendor = await VendorProfile_1.default.findById(id);
+    if (!vendor) {
+        res.status(404).json({ success: false, message: 'Vendor not found' });
+        return;
+    }
+    vendor.isPremium = !vendor.isPremium;
+    await vendor.save();
+    res.json({
+        success: true,
+        message: `Vendor ${vendor.isPremium ? 'upgraded to premium' : 'removed from premium'}`,
+        data: { isPremium: vendor.isPremium },
     });
 });
 /**

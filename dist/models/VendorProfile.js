@@ -71,7 +71,7 @@ const vendorProfileSchema = new mongoose_1.Schema({
     kycDocuments: [{
             type: {
                 type: String,
-                enum: ['CAC', 'ID_CARD', 'PASSPORT', 'DRIVERS_LICENSE', 'UTILITY_BILL'],
+                enum: ['NIN', 'CAC', 'ID_CARD', 'PASSPORT', 'DRIVERS_LICENSE', 'UTILITY_BILL'],
                 required: true,
             },
             documentUrl: {
@@ -126,6 +126,10 @@ const vendorProfileSchema = new mongoose_1.Schema({
     totalReviews: {
         type: Number,
         default: 0,
+    },
+    isPremium: {
+        type: Boolean,
+        default: false,
     },
     isActive: {
         type: Boolean,

@@ -13,6 +13,7 @@ export interface IWalletTransaction {
 export interface IWallet extends Document {
     user: Types.ObjectId;
     balance: number;
+    vCredits: number;
     totalEarned: number;
     totalSpent: number;
     totalWithdrawn: number;

@@ -1,4 +1,6 @@
 import { NotificationType } from '../types';
+import { Server as SocketServer } from 'socket.io';
+export declare const setSocketInstance: (io: SocketServer) => void;
 interface NotifyOptions {
     userId: string;
     type: NotificationType;

@@ -11,6 +11,7 @@ import routes from './routes';
 import { errorHandler, notFound } from './middleware/error';
 import { logger } from './utils/logger';
 import { initializeSocket } from './config/socket';
+import { setSocketInstance } from './services/notification.service';
 
 // Load environment variables
 dotenv.config();
@@ -29,6 +30,9 @@ const io = initializeSocket(server);
 
 // Make io accessible to controllers via req.app
 app.set('io', io);
+
+// Make io accessible to notification service for real-time events
+setSocketInstance(io);
 
 // ============================================================
 // INCREASED TIMEOUT FOR LARGE UPLOADS

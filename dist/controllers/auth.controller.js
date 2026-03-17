@@ -101,6 +101,47 @@ class AuthController {
         });
     }
     /**
+     * Guest register - create account with just email
+     */
+    async guestRegister(req, res) {
+        const { email } = req.body;
+        // Check if user exists
+        const existingUser = await User_1.default.findOne({ email });
+        if (existingUser) {
+            throw new error_1.AppError('Email already registered. Please sign in.', 400);
+        }
+        // Generate random password
+        const randomPassword = crypto_1.default.randomBytes(8).toString('hex');
+        // Create user
+        const user = await User_1.default.create({
+            firstName: 'Guest',
+            lastName: 'User',
+            email,
+            password: randomPassword,
+            role: types_1.UserRole.CUSTOMER,
+            emailVerified: true,
+            status: types_1.UserStatus.ACTIVE,
+        });
+        // Create wallet for user
+        await Additional_1.Wallet.create({ user: user._id });
+        // Generate tokens
+        const tokens = (0, jwt_1.generateTokens)(user._id, user.email, user.role);
+        res.status(201).json({
+            success: true,
+            message: 'Guest registration successful',
+            data: {
+                user: {
+                    id: user._id,
+                    firstName: user.firstName,
+                    lastName: user.lastName,
+                    email: user.email,
+                    role: user.role,
+                },
+                ...tokens,
+            },
+        });
+    }
+    /**
      * Verify email with OTP
      */
     async verifyEmail(req, res) {
@@ -124,11 +165,21 @@ class AuthController {
         user.otp = undefined;
         await user.save();
         // Queue welcome emails in background with 10 second delays
-        (0, email_queue_1.queueEmailsInBackground)([
-            () => (0, email_1.sendWelcomeEmail)(user.email, user.firstName),
-            () => (0, email_1.sendFounderWelcomeEmail)(user.email),
-            () => (0, email_1.sendProductPostingGuideEmail)(user.email),
-        ], 10000); // 10 seconds between each email
+        // Only send vendor-specific emails (founder welcome + product posting guide) to vendors
+        // Buyers get welcome email + buyer founder's note only
+        if (user.role === 'vendor') {
+            (0, email_queue_1.queueEmailsInBackground)([
+                () => (0, email_1.sendWelcomeEmail)(user.email, user.firstName),
+                () => (0, email_1.sendFounderWelcomeEmail)(user.email),
+                () => (0, email_1.sendProductPostingGuideEmail)(user.email),
+            ], 10000);
+        }
+        else {
+            (0, email_queue_1.queueEmailsInBackground)([
+                () => (0, email_1.sendWelcomeEmail)(user.email, user.firstName),
+                () => (0, email_1.sendBuyerFounderWelcomeEmail)(user.email, user.firstName),
+            ], 10000);
+        }
         // Send welcome notification
         try {
             await notification_service_1.notificationService.welcomeNotification(user._id.toString(), user.firstName);

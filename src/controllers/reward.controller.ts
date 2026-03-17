@@ -11,6 +11,9 @@ import { notificationService } from '../services/notification.service';
 import { logger } from '../utils/logger';
 
 export class RewardController {
+  // Track in-flight redemptions to prevent double-click
+  private redemptionLocks = new Set<string>();
+
   /**
    * Get user points and rewards
    */
@@ -20,15 +23,17 @@ export class RewardController {
       throw new AppError('User not found', 404);
     }
 
-    // Calculate tier based on points
+    const currentPoints = user.points || 0;
+
+    // Calculate tier based on current points (drops when points are redeemed)
     let tier = 'Bronze';
-    if (user.points >= 10000) {
+    if (currentPoints >= 10000) {
       tier = 'Diamond';
-    } else if (user.points >= 5000) {
+    } else if (currentPoints >= 5000) {
       tier = 'Platinum';
-    } else if (user.points >= 2000) {
+    } else if (currentPoints >= 2000) {
       tier = 'Gold';
-    } else if (user.points >= 500) {
+    } else if (currentPoints >= 500) {
       tier = 'Silver';
     }
 
@@ -42,14 +47,19 @@ export class RewardController {
     };
 
     const currentTier = tierThresholds[tier as keyof typeof tierThresholds];
-    const pointsToNext = currentTier.next ? currentTier.next - (user.points || 0) : 0;
+    const pointsToNext = currentTier.next ? currentTier.next - currentPoints : 0;
+
+    // Get VCredits balance
+    const wallet = await Wallet.findOne({ user: user._id });
+    const vCredits = wallet?.vCredits || 0;
 
     res.json({
       success: true,
       data: {
-        points: user.points || 0,
+        points: currentPoints,
+        vCredits,
         tier,
-        pointsToNextTier: pointsToNext,
+        pointsToNextTier: Math.max(0, pointsToNext),
         badges: user.badges || [],
         achievements: user.achievements || [],
       },
@@ -100,8 +110,16 @@ export class RewardController {
    */
   async redeemPoints(req: AuthRequest, res: Response<ApiResponse>): Promise<void> {
     const { points } = req.body;
+    const userId = req.user?.id;
 
-    const user = await User.findById(req.user?.id);
+    // Prevent double-click / concurrent redemptions
+    if (this.redemptionLocks.has(userId!)) {
+      throw new AppError('Redemption already in progress. Please wait.', 429);
+    }
+    this.redemptionLocks.add(userId!);
+
+    try {
+    const user = await User.findById(userId);
     if (!user) {
       throw new AppError('User not found', 404);
     }
@@ -117,9 +135,16 @@ export class RewardController {
     // Conversion rate: 100 points = ₦100
     const cashValue = points;
 
-    // Deduct points
-    user.points = (user.points || 0) - points;
-    await user.save();
+    // Atomic deduct using findOneAndUpdate to prevent race conditions
+    const updated = await User.findOneAndUpdate(
+      { _id: userId, points: { $gte: points } },
+      { $inc: { points: -points } },
+      { new: true }
+    );
+
+    if (!updated) {
+      throw new AppError('Insufficient points', 400);
+    }
 
     // Create transaction record for redemption
     await PointsTransaction.create({
@@ -127,24 +152,23 @@ export class RewardController {
       type: 'spend',
       activity: 'redemption',
       points: -points,
-      description: `Redeemed ${points} points for ₦${cashValue}`,
-      metadata: { cashValue },
+      description: `Converted ${points} points to ${cashValue} VCredits`,
+      metadata: { vCredits: cashValue },
     });
 
-    // Add to wallet
+    // Add to wallet as VCredits (separate from cash balance)
     let wallet = await Wallet.findOne({ user: user._id });
     if (!wallet) {
       wallet = await Wallet.create({ user: user._id });
     }
 
-    wallet.balance += cashValue;
-    wallet.totalEarned += cashValue;
+    wallet.vCredits = (wallet.vCredits || 0) + cashValue;
     wallet.transactions.push({
       type: 'credit',
       amount: cashValue,
       purpose: 'reward',
-      reference: `POINTS-REDEEM-${Date.now()}`,
-      description: `Redeemed ${points} points`,
+      reference: `VCREDITS-${Date.now()}`,
+      description: `Converted ${points} points to ${cashValue} VCredits`,
       status: 'completed',
       timestamp: new Date(),
     } as any);
@@ -162,14 +186,17 @@ export class RewardController {
 
     res.json({
       success: true,
-      message: 'Points redeemed successfully',
+      message: `${points} points converted to ${cashValue.toLocaleString()} VCredits. Use them to pay for orders!`,
       data: {
         pointsRedeemed: points,
-        cashValue,
-        remainingPoints: user.points,
-        newBalance: wallet.balance,
+        vCreditsEarned: cashValue,
+        remainingPoints: updated.points,
+        vCreditsBalance: wallet.vCredits,
       },
     });
+    } finally {
+      this.redemptionLocks.delete(userId!);
+    }
   }
 
   /**
@@ -297,30 +324,30 @@ export class RewardController {
     // Define available rewards
     const rewards = [
       {
-        id: 'cash-100',
-        name: '₦100 Cash',
-        description: 'Redeem 100 points for ₦100',
+        id: 'vcredits-100',
+        name: '100 VCredits',
+        description: 'Convert 100 points to 100 VCredits',
         pointsCost: 100,
         available: (user.points || 0) >= 100,
       },
       {
-        id: 'cash-500',
-        name: '₦500 Cash',
-        description: 'Redeem 500 points for ₦500',
+        id: 'vcredits-500',
+        name: '500 VCredits',
+        description: 'Convert 500 points to 500 VCredits',
         pointsCost: 500,
         available: (user.points || 0) >= 500,
       },
       {
-        id: 'cash-1000',
-        name: '₦1,000 Cash',
-        description: 'Redeem 1,000 points for ₦1,000',
+        id: 'vcredits-1000',
+        name: '1,000 VCredits',
+        description: 'Convert 1,000 points to 1,000 VCredits',
         pointsCost: 1000,
         available: (user.points || 0) >= 1000,
       },
       {
-        id: 'cash-5000',
-        name: '₦5,000 Cash',
-        description: 'Redeem 5,000 points for ₦5,000',
+        id: 'vcredits-5000',
+        name: '5,000 VCredits',
+        description: 'Convert 5,000 points to 5,000 VCredits',
         pointsCost: 5000,
         available: (user.points || 0) >= 5000,
       },

@@ -1,4 +1,4 @@
-import { Response } from 'express';
+import { Request, Response } from 'express';
 import { AuthRequest, ApiResponse } from '../types';
 export declare class VendorController {
     /**
@@ -64,6 +64,11 @@ export declare class VendorController {
      * Get public vendor profile
      */
     getPublicVendorProfile(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
+    /**
+     * GET /api/v1/vendor/banks
+     * Get Nigerian banks list from Paystack API
+     */
+    getBanks(req: Request, res: Response<ApiResponse>): Promise<void>;
 }
 export declare const vendorController: VendorController;
 //# sourceMappingURL=vendor.controller.d.ts.map

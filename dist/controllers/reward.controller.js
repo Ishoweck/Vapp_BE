@@ -13,6 +13,10 @@ const error_1 = require("../middleware/error");
 const notification_service_1 = require("../services/notification.service");
 const logger_1 = require("../utils/logger");
 class RewardController {
+    constructor() {
+        // Track in-flight redemptions to prevent double-click
+        this.redemptionLocks = new Set();
+    }
     /**
      * Get user points and rewards
      */
@@ -21,18 +25,19 @@ class RewardController {
         if (!user) {
             throw new error_1.AppError('User not found', 404);
         }
-        // Calculate tier based on points
+        const currentPoints = user.points || 0;
+        // Calculate tier based on current points (drops when points are redeemed)
         let tier = 'Bronze';
-        if (user.points >= 10000) {
+        if (currentPoints >= 10000) {
             tier = 'Diamond';
         }
-        else if (user.points >= 5000) {
+        else if (currentPoints >= 5000) {
             tier = 'Platinum';
         }
-        else if (user.points >= 2000) {
+        else if (currentPoints >= 2000) {
             tier = 'Gold';
         }
-        else if (user.points >= 500) {
+        else if (currentPoints >= 500) {
             tier = 'Silver';
         }
         // Calculate next tier requirements
@@ -44,13 +49,17 @@ class RewardController {
             Diamond: { min: 10000, next: null },
         };
         const currentTier = tierThresholds[tier];
-        const pointsToNext = currentTier.next ? currentTier.next - (user.points || 0) : 0;
+        const pointsToNext = currentTier.next ? currentTier.next - currentPoints : 0;
+        // Get VCredits balance
+        const wallet = await Additional_1.Wallet.findOne({ user: user._id });
+        const vCredits = wallet?.vCredits || 0;
         res.json({
             success: true,
             data: {
-                points: user.points || 0,
+                points: currentPoints,
+                vCredits,
                 tier,
-                pointsToNextTier: pointsToNext,
+                pointsToNextTier: Math.max(0, pointsToNext),
                 badges: user.badges || [],
                 achievements: user.achievements || [],
             },
@@ -90,65 +99,77 @@ class RewardController {
      */
     async redeemPoints(req, res) {
         const { points } = req.body;
-        const user = await User_1.default.findById(req.user?.id);
-        if (!user) {
-            throw new error_1.AppError('User not found', 404);
+        const userId = req.user?.id;
+        // Prevent double-click / concurrent redemptions
+        if (this.redemptionLocks.has(userId)) {
+            throw new error_1.AppError('Redemption already in progress. Please wait.', 429);
         }
-        if ((user.points || 0) < points) {
-            throw new error_1.AppError('Insufficient points', 400);
-        }
-        if (points < 100) {
-            throw new error_1.AppError('Minimum redemption is 100 points', 400);
-        }
-        // Conversion rate: 100 points = ₦100
-        const cashValue = points;
-        // Deduct points
-        user.points = (user.points || 0) - points;
-        await user.save();
-        // Create transaction record for redemption
-        await PointsTransaction_1.default.create({
-            user: user._id,
-            type: 'spend',
-            activity: 'redemption',
-            points: -points,
-            description: `Redeemed ${points} points for ₦${cashValue}`,
-            metadata: { cashValue },
-        });
-        // Add to wallet
-        let wallet = await Additional_1.Wallet.findOne({ user: user._id });
-        if (!wallet) {
-            wallet = await Additional_1.Wallet.create({ user: user._id });
-        }
-        wallet.balance += cashValue;
-        wallet.totalEarned += cashValue;
-        wallet.transactions.push({
-            type: 'credit',
-            amount: cashValue,
-            purpose: 'reward',
-            reference: `POINTS-REDEEM-${Date.now()}`,
-            description: `Redeemed ${points} points`,
-            status: 'completed',
-            timestamp: new Date(),
-        });
-        await wallet.save();
-        logger_1.logger.info(`Points redeemed: ${points} by user ${req.user?.id}`);
-        // Notify user
+        this.redemptionLocks.add(userId);
         try {
-            await notification_service_1.notificationService.pointsRedeemed(req.user.id, points, cashValue);
+            const user = await User_1.default.findById(userId);
+            if (!user) {
+                throw new error_1.AppError('User not found', 404);
+            }
+            if ((user.points || 0) < points) {
+                throw new error_1.AppError('Insufficient points', 400);
+            }
+            if (points < 100) {
+                throw new error_1.AppError('Minimum redemption is 100 points', 400);
+            }
+            // Conversion rate: 100 points = ₦100
+            const cashValue = points;
+            // Atomic deduct using findOneAndUpdate to prevent race conditions
+            const updated = await User_1.default.findOneAndUpdate({ _id: userId, points: { $gte: points } }, { $inc: { points: -points } }, { new: true });
+            if (!updated) {
+                throw new error_1.AppError('Insufficient points', 400);
+            }
+            // Create transaction record for redemption
+            await PointsTransaction_1.default.create({
+                user: user._id,
+                type: 'spend',
+                activity: 'redemption',
+                points: -points,
+                description: `Converted ${points} points to ${cashValue} VCredits`,
+                metadata: { vCredits: cashValue },
+            });
+            // Add to wallet as VCredits (separate from cash balance)
+            let wallet = await Additional_1.Wallet.findOne({ user: user._id });
+            if (!wallet) {
+                wallet = await Additional_1.Wallet.create({ user: user._id });
+            }
+            wallet.vCredits = (wallet.vCredits || 0) + cashValue;
+            wallet.transactions.push({
+                type: 'credit',
+                amount: cashValue,
+                purpose: 'reward',
+                reference: `VCREDITS-${Date.now()}`,
+                description: `Converted ${points} points to ${cashValue} VCredits`,
+                status: 'completed',
+                timestamp: new Date(),
+            });
+            await wallet.save();
+            logger_1.logger.info(`Points redeemed: ${points} by user ${req.user?.id}`);
+            // Notify user
+            try {
+                await notification_service_1.notificationService.pointsRedeemed(req.user.id, points, cashValue);
+            }
+            catch (error) {
+                logger_1.logger.error('Error sending redeem notification:', error);
+            }
+            res.json({
+                success: true,
+                message: `${points} points converted to ${cashValue.toLocaleString()} VCredits. Use them to pay for orders!`,
+                data: {
+                    pointsRedeemed: points,
+                    vCreditsEarned: cashValue,
+                    remainingPoints: updated.points,
+                    vCreditsBalance: wallet.vCredits,
+                },
+            });
         }
-        catch (error) {
-            logger_1.logger.error('Error sending redeem notification:', error);
+        finally {
+            this.redemptionLocks.delete(userId);
         }
-        res.json({
-            success: true,
-            message: 'Points redeemed successfully',
-            data: {
-                pointsRedeemed: points,
-                cashValue,
-                remainingPoints: user.points,
-                newBalance: wallet.balance,
-            },
-        });
     }
     /**
      * Award badge to user
@@ -261,30 +282,30 @@ class RewardController {
         // Define available rewards
         const rewards = [
             {
-                id: 'cash-100',
-                name: '₦100 Cash',
-                description: 'Redeem 100 points for ₦100',
+                id: 'vcredits-100',
+                name: '100 VCredits',
+                description: 'Convert 100 points to 100 VCredits',
                 pointsCost: 100,
                 available: (user.points || 0) >= 100,
             },
             {
-                id: 'cash-500',
-                name: '₦500 Cash',
-                description: 'Redeem 500 points for ₦500',
+                id: 'vcredits-500',
+                name: '500 VCredits',
+                description: 'Convert 500 points to 500 VCredits',
                 pointsCost: 500,
                 available: (user.points || 0) >= 500,
             },
             {
-                id: 'cash-1000',
-                name: '₦1,000 Cash',
-                description: 'Redeem 1,000 points for ₦1,000',
+                id: 'vcredits-1000',
+                name: '1,000 VCredits',
+                description: 'Convert 1,000 points to 1,000 VCredits',
                 pointsCost: 1000,
                 available: (user.points || 0) >= 1000,
             },
             {
-                id: 'cash-5000',
-                name: '₦5,000 Cash',
-                description: 'Redeem 5,000 points for ₦5,000',
+                id: 'vcredits-5000',
+                name: '5,000 VCredits',
+                description: 'Convert 5,000 points to 5,000 VCredits',
                 pointsCost: 5000,
                 available: (user.points || 0) >= 5000,
             },

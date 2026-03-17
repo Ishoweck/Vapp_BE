@@ -159,6 +159,48 @@ export class NotificationController {
   }
 
   /**
+   * Get notification preferences
+   */
+  async getPreferences(req: AuthRequest, res: Response<ApiResponse>): Promise<void> {
+    const user = await User.findById(req.user?.id).select('notificationPreferences');
+    if (!user) {
+      throw new AppError('User not found', 404);
+    }
+
+    res.json({
+      success: true,
+      data: user.notificationPreferences || { pushEnabled: true, order: [], promo: [], social: [] },
+    });
+  }
+
+  /**
+   * Update notification preferences
+   */
+  async updatePreferences(req: AuthRequest, res: Response<ApiResponse>): Promise<void> {
+    const { pushEnabled, order, promo, social } = req.body;
+
+    const user = await User.findById(req.user?.id);
+    if (!user) {
+      throw new AppError('User not found', 404);
+    }
+
+    user.notificationPreferences = {
+      pushEnabled: pushEnabled ?? true,
+      order: order || [],
+      promo: promo || [],
+      social: social || [],
+    };
+
+    await user.save();
+
+    res.json({
+      success: true,
+      message: 'Notification preferences updated',
+      data: user.notificationPreferences,
+    });
+  }
+
+  /**
    * Get unread notification count
    */
   async getUnreadCount(req: AuthRequest, res: Response<ApiResponse>): Promise<void> {

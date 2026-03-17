@@ -129,6 +129,23 @@ const userSchema = new Schema<IUserDocument>(
       type: String,
       sparse: true,
     },
+
+    // Notification preferences
+    notificationPreferences: {
+      pushEnabled: { type: Boolean, default: true },
+      order: [{
+        id: String,
+        enabled: { type: Boolean, default: true },
+      }],
+      promo: [{
+        id: String,
+        enabled: { type: Boolean, default: true },
+      }],
+      social: [{
+        id: String,
+        enabled: { type: Boolean, default: true },
+      }],
+    },
   },
   {
     timestamps: true,

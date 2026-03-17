@@ -4,9 +4,12 @@ const express_1 = require("express");
 const auth_1 = require("../middleware/auth");
 const types_1 = require("../types");
 const admin_controller_1 = require("../controllers/admin.controller");
+const audit_1 = require("../middleware/audit");
 const router = (0, express_1.Router)();
 // All admin routes require authentication
 router.use(auth_1.authenticate);
+// Audit all admin actions (POST, PUT, PATCH, DELETE)
+router.use(audit_1.auditMiddleware);
 // Helper: all admin roles
 const allAdmins = [types_1.UserRole.ADMIN, types_1.UserRole.SUPER_ADMIN, types_1.UserRole.FINANCIAL_ADMIN];
 // Helper: general admins (not financial-only)
@@ -42,6 +45,7 @@ router.get('/vendors', (0, auth_1.authorize)(...generalAdmins), admin_controller
 router.get('/vendors/:id', (0, auth_1.authorize)(...generalAdmins), admin_controller_1.getVendorDetails);
 router.put('/vendors/:id/verify', (0, auth_1.authorize)(...generalAdmins), admin_controller_1.verifyVendor);
 router.put('/vendors/:id/status', (0, auth_1.authorize)(...generalAdmins), admin_controller_1.toggleVendorStatus);
+router.put('/vendors/:id/premium', (0, auth_1.authorize)(...generalAdmins), admin_controller_1.toggleVendorPremium);
 router.put('/vendors/:id/commission', (0, auth_1.authorize)(...allAdmins), admin_controller_1.updateVendorCommission);
 // ================================================================
 // PRODUCT MANAGEMENT

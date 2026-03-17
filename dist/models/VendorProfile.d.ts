@@ -25,6 +25,7 @@ export interface IVendorProfile extends Document {
     totalOrders: number;
     averageRating: number;
     totalReviews: number;
+    isPremium: boolean;
     isActive: boolean;
     storefront: {
         theme?: string;

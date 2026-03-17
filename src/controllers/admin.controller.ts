@@ -1039,6 +1039,31 @@ export const toggleVendorStatus = asyncHandler(
 );
 
 /**
+ * PUT /admin/vendors/:id/premium
+ * Toggle vendor premium status
+ */
+export const toggleVendorPremium = asyncHandler(
+  async (req: AuthRequest, res: Response<ApiResponse>): Promise<void> => {
+    const { id } = req.params;
+
+    const vendor = await VendorProfile.findById(id);
+    if (!vendor) {
+      res.status(404).json({ success: false, message: 'Vendor not found' });
+      return;
+    }
+
+    (vendor as any).isPremium = !(vendor as any).isPremium;
+    await vendor.save();
+
+    res.json({
+      success: true,
+      message: `Vendor ${(vendor as any).isPremium ? 'upgraded to premium' : 'removed from premium'}`,
+      data: { isPremium: (vendor as any).isPremium },
+    });
+  }
+);
+
+/**
  * PUT /admin/vendors/:id/commission
  * Update vendor commission rate
  */

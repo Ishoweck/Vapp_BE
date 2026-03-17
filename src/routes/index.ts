@@ -23,6 +23,7 @@ import questionRoutes from "./question.routes"
 import disputeRoutes from "./dispute.routes"
 import messageRoutes from './message.routes';
 import adminRoutes from './admin.routes';
+import auditRoutes from './audit.routes';
 
 
 const router = Router();
@@ -51,6 +52,7 @@ router.use('/questions', questionRoutes);
 router.use('/disputes', disputeRoutes);
 router.use('/messages', messageRoutes);
 router.use('/admin', adminRoutes);
+router.use('/admin/audit-logs', auditRoutes);
 
 
 // Health check

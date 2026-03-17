@@ -83,6 +83,11 @@ const walletSchema = new mongoose_1.Schema({
         default: 0,
         min: 0,
     },
+    vCredits: {
+        type: Number,
+        default: 0,
+        min: 0,
+    },
     totalEarned: {
         type: Number,
         default: 0,

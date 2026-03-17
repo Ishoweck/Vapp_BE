@@ -85,6 +85,11 @@ export declare const verifyVendor: (req: import("express").Request, res: Respons
  */
 export declare const toggleVendorStatus: (req: import("express").Request, res: Response, next: import("express").NextFunction) => void;
 /**
+ * PUT /admin/vendors/:id/premium
+ * Toggle vendor premium status
+ */
+export declare const toggleVendorPremium: (req: import("express").Request, res: Response, next: import("express").NextFunction) => void;
+/**
  * PUT /admin/vendors/:id/commission
  * Update vendor commission rate
  */

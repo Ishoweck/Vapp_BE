@@ -17,6 +17,7 @@ const routes_1 = __importDefault(require("./routes"));
 const error_1 = require("./middleware/error");
 const logger_1 = require("./utils/logger");
 const socket_1 = require("./config/socket");
+const notification_service_1 = require("./services/notification.service");
 // Load environment variables
 dotenv_1.default.config();
 // Create Express app
@@ -30,6 +31,8 @@ const io = (0, socket_1.initializeSocket)(server);
 exports.io = io;
 // Make io accessible to controllers via req.app
 app.set('io', io);
+// Make io accessible to notification service for real-time events
+(0, notification_service_1.setSocketInstance)(io);
 // ============================================================
 // INCREASED TIMEOUT FOR LARGE UPLOADS
 // ============================================================

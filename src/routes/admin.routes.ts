@@ -26,6 +26,7 @@ import {
   getVendorDetails,
   verifyVendor,
   toggleVendorStatus,
+  toggleVendorPremium,
   updateVendorCommission,
 
   // Product Management
@@ -99,11 +100,15 @@ import {
   getActivityLog,
   globalSearch,
 } from '../controllers/admin.controller';
+import { auditMiddleware } from '../middleware/audit';
 
 const router = Router();
 
 // All admin routes require authentication
 router.use(authenticate);
+
+// Audit all admin actions (POST, PUT, PATCH, DELETE)
+router.use(auditMiddleware);
 
 // Helper: all admin roles
 const allAdmins = [UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.FINANCIAL_ADMIN];
@@ -146,6 +151,7 @@ router.get('/vendors', authorize(...generalAdmins), getAllVendors);
 router.get('/vendors/:id', authorize(...generalAdmins), getVendorDetails);
 router.put('/vendors/:id/verify', authorize(...generalAdmins), verifyVendor);
 router.put('/vendors/:id/status', authorize(...generalAdmins), toggleVendorStatus);
+router.put('/vendors/:id/premium', authorize(...generalAdmins), toggleVendorPremium);
 router.put('/vendors/:id/commission', authorize(...allAdmins), updateVendorCommission);
 
 // ================================================================

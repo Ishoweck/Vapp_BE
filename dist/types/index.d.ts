@@ -293,6 +293,21 @@ export interface IUserDocument extends Document {
     };
     oauthProvider?: 'google' | 'apple' | 'facebook';
     oauthId?: string;
+    notificationPreferences?: {
+        pushEnabled: boolean;
+        order: {
+            id: string;
+            enabled: boolean;
+        }[];
+        promo: {
+            id: string;
+            enabled: boolean;
+        }[];
+        social: {
+            id: string;
+            enabled: boolean;
+        }[];
+    };
     comparePassword(candidatePassword: string): Promise<boolean>;
 }
 //# sourceMappingURL=index.d.ts.map

@@ -3,12 +3,18 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.notificationService = void 0;
+exports.notificationService = exports.setSocketInstance = void 0;
 const types_1 = require("../types");
 const Additional_1 = require("../models/Additional");
 const User_1 = __importDefault(require("../models/User"));
 const firebase_1 = require("../config/firebase");
 const logger_1 = require("../utils/logger");
+// Socket.io instance - set from server.ts after initialization
+let ioInstance = null;
+const setSocketInstance = (io) => {
+    ioInstance = io;
+};
+exports.setSocketInstance = setSocketInstance;
 class NotificationService {
     /**
      * Send notification to a single user (in-app + push)
@@ -17,7 +23,7 @@ class NotificationService {
         const { userId, type, title, message, data, link } = options;
         try {
             // 1. Create in-app notification
-            await Additional_1.Notification.create({
+            const notification = await Additional_1.Notification.create({
                 user: userId,
                 type,
                 title,
@@ -25,7 +31,24 @@ class NotificationService {
                 data,
                 link,
             });
-            // 2. Send push notification
+            // 2. Emit real-time socket event so frontend updates instantly
+            if (ioInstance) {
+                const unreadCount = await Additional_1.Notification.countDocuments({ user: userId, read: false });
+                ioInstance.to(`user_${userId}`).emit('new_notification', {
+                    notification: {
+                        _id: notification._id,
+                        type,
+                        title,
+                        message,
+                        data,
+                        link,
+                        read: false,
+                        createdAt: notification.createdAt,
+                    },
+                    unreadCount,
+                });
+            }
+            // 3. Send push notification
             const user = await User_1.default.findById(userId).select('fcmTokens');
             if (user?.fcmTokens && user.fcmTokens.length > 0) {
                 const pushData = {
@@ -61,6 +84,21 @@ class NotificationService {
         }
         catch (error) {
             logger_1.logger.error('Bulk notification insert error:', error.message);
+        }
+        // Emit real-time socket events to each user
+        if (ioInstance) {
+            for (const userId of uniqueIds) {
+                try {
+                    const unreadCount = await Additional_1.Notification.countDocuments({ user: userId, read: false });
+                    ioInstance.to(`user_${userId}`).emit('new_notification', {
+                        notification: { type, title, message, data, link, read: false, createdAt: new Date() },
+                        unreadCount,
+                    });
+                }
+                catch (err) {
+                    // Don't block on socket errors
+                }
+            }
         }
         // Send push notifications
         try {
@@ -341,9 +379,9 @@ class NotificationService {
         await this.send({
             userId,
             type: types_1.NotificationType.SYSTEM,
-            title: 'Points Redeemed',
-            message: `You redeemed ${points} points for ₦${cashValue.toLocaleString()}. The amount has been added to your wallet.`,
-            data: { points, cashValue },
+            title: 'VCredits Earned!',
+            message: `You converted ${points} points to ${cashValue.toLocaleString()} VCredits. Use them to pay for orders!`,
+            data: { points, vCredits: cashValue },
             link: '/wallet',
         });
     }

@@ -36,7 +36,11 @@ const appleLoginValidation = [
     (0, express_validator_1.body)('identityToken').notEmpty().withMessage('Apple identity token is required'),
     (0, express_validator_1.body)('role').optional().isIn(['customer', 'vendor', 'affiliate']).withMessage('Invalid role'),
 ];
+const guestRegisterValidation = [
+    (0, express_validator_1.body)('email').isEmail().withMessage('Valid email is required'),
+];
 // Standard auth routes
+router.post('/guest-register', (0, validation_1.validate)(guestRegisterValidation), (0, error_1.asyncHandler)(auth_controller_1.authController.guestRegister.bind(auth_controller_1.authController)));
 router.post('/register', (0, validation_1.validate)(registerValidation), (0, error_1.asyncHandler)(auth_controller_1.authController.register.bind(auth_controller_1.authController)));
 router.post('/verify-email', (0, error_1.asyncHandler)(auth_controller_1.authController.verifyEmail.bind(auth_controller_1.authController)));
 router.post('/resend-otp', (0, error_1.asyncHandler)(auth_controller_1.authController.resendOTP.bind(auth_controller_1.authController)));

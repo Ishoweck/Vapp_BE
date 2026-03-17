@@ -818,7 +818,7 @@
         await wallet.save();
 
         order.paymentStatus = PaymentStatus.COMPLETED;
-        order.status = isDigitalOnly ? OrderStatus.DELIVERED : OrderStatus.CONFIRMED;
+        order.status = isDigitalOnly ? OrderStatus.DELIVERED : OrderStatus.PENDING;
         await order.save();
 
         logger.info('✅ Wallet payment completed');
@@ -950,6 +950,7 @@
         selectedDeliveryPrice,
         selectedCourier,
         vendorBreakdown,
+        vCreditsAmount = 0,
       } = req.body;
 
       logger.info('💳 ============================================');
@@ -957,7 +958,7 @@
       logger.info('💳 ============================================');
 
       // Wallet payments should go through createOrder directly
-      if (paymentMethod === PaymentMethod.WALLET) {
+      if (paymentMethod === PaymentMethod.WALLET && !vCreditsAmount) {
         throw new AppError('Wallet payments should use /orders/create endpoint directly', 400);
       }
 
@@ -1025,10 +1026,38 @@
       const tax = 0;
       const total = subtotal - discount + totalShippingCost + tax;
 
+      // Validate and apply VCredits (separate from wallet cash balance)
+      let validVCredits = 0;
+      if (vCreditsAmount > 0) {
+        const wallet = await Wallet.findOne({ user: req.user?.id });
+        if (!wallet || (wallet.vCredits || 0) < vCreditsAmount) {
+          throw new AppError('Insufficient VCredits balance', 400);
+        }
+        // Can't apply more VCredits than the total
+        validVCredits = Math.min(vCreditsAmount, total);
+
+        // Deduct from vCredits field (not wallet balance)
+        wallet.vCredits = (wallet.vCredits || 0) - validVCredits;
+        wallet.transactions.push({
+          type: TransactionType.DEBIT,
+          amount: validVCredits,
+          purpose: WalletPurpose.PURCHASE,
+          reference: `VCREDITS-HOLD-${Date.now()}`,
+          description: `VCredits applied to order (pending card payment)`,
+          status: 'completed',
+          timestamp: new Date(),
+        } as any);
+        await wallet.save();
+
+        logger.info(`💎 VCredits applied: ${validVCredits} — remaining to charge on card: ₦${total - validVCredits}`);
+      }
+
+      const cardChargeAmount = total - validVCredits;
+
       // Generate a reference for this payment attempt
       const paymentReference = generateOrderNumber();
 
-      logger.info('💰 Payment calculation:', { subtotal, discount, totalShippingCost, total, paymentReference });
+      logger.info('💰 Payment calculation:', { subtotal, discount, totalShippingCost, total, vCreditsApplied: validVCredits, cardChargeAmount, paymentReference });
 
       // Store checkout snapshot in a temporary collection or encode in metadata
       // We'll pass all checkout data as metadata so confirmPayment can reconstruct the order
@@ -1048,6 +1077,7 @@
         total,
         couponCode: cart.couponCode,
         isDigitalOnly,
+        vCreditsApplied: validVCredits,
         paymentReference,
         cartId: cart._id.toString(),
         createdAt: new Date().toISOString(),
@@ -1060,7 +1090,7 @@
         try {
           const paystackResponse = await paystackService.initializePayment({
             email: user.email,
-            amount: total * 100,
+            amount: cardChargeAmount * 100,
             reference: paymentReference,
             callback_url: `${process.env.FRONTEND_URL}/orders/${paymentReference}/payment-callback`,
             metadata: {
@@ -1086,7 +1116,7 @@
         try {
           const flutterwaveResponse = await flutterwaveService.initializePayment({
             tx_ref: paymentReference,
-            amount: total,
+            amount: cardChargeAmount,
             currency: 'NGN',
             redirect_url: `${process.env.FRONTEND_URL}/orders/${paymentReference}/payment-callback`,
             customer: {
@@ -1125,11 +1155,15 @@
 
       res.status(200).json({
         success: true,
-        message: 'Payment initialized. Complete payment to create your order.',
+        message: validVCredits > 0
+          ? `VCredits applied! Pay ₦${cardChargeAmount.toLocaleString()} with card to complete your order.`
+          : 'Payment initialized. Complete payment to create your order.',
         data: {
           payment: paymentData,
           checkoutSnapshot,
           total,
+          vCreditsApplied: validVCredits,
+          cardChargeAmount,
           isDigital: isDigitalOnly,
         },
       });
@@ -1373,7 +1407,7 @@
         shippingCost: totalShippingCost,
         tax,
         total,
-        status: isDigitalOnly ? OrderStatus.DELIVERED : OrderStatus.CONFIRMED,
+        status: isDigitalOnly ? OrderStatus.DELIVERED : OrderStatus.PENDING,
         paymentStatus: PaymentStatus.COMPLETED,
         paymentMethod,
         paymentReference: reference,
@@ -1806,7 +1840,7 @@
           logger.info('📦 Order type:', { isDigitalOnly });
 
           order.paymentStatus = PaymentStatus.COMPLETED;
-          order.status = isDigitalOnly ? OrderStatus.DELIVERED : OrderStatus.CONFIRMED;
+          order.status = isDigitalOnly ? OrderStatus.DELIVERED : OrderStatus.PENDING;
           await order.save();
 
           logger.info('✅ Order status updated:', {

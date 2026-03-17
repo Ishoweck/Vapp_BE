@@ -40,7 +40,12 @@ const appleLoginValidation = [
   body('role').optional().isIn(['customer', 'vendor', 'affiliate']).withMessage('Invalid role'),
 ];
 
+const guestRegisterValidation = [
+  body('email').isEmail().withMessage('Valid email is required'),
+];
+
 // Standard auth routes
+router.post('/guest-register', validate(guestRegisterValidation), asyncHandler(authController.guestRegister.bind(authController)));
 router.post('/register', validate(registerValidation), asyncHandler(authController.register.bind(authController)));
 router.post('/verify-email', asyncHandler(authController.verifyEmail.bind(authController)));
 router.post('/resend-otp', asyncHandler(authController.resendOTP.bind(authController)));

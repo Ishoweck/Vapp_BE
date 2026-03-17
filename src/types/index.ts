@@ -363,7 +363,15 @@ export interface IUserDocument extends Document {
   // OAuth fields
   oauthProvider?: 'google' | 'apple' | 'facebook';
   oauthId?: string;
-  
+
+  // Notification preferences
+  notificationPreferences?: {
+    pushEnabled: boolean;
+    order: { id: string; enabled: boolean }[];
+    promo: { id: string; enabled: boolean }[];
+    social: { id: string; enabled: boolean }[];
+  };
+
   // Methods
   comparePassword(candidatePassword: string): Promise<boolean>;
 }
