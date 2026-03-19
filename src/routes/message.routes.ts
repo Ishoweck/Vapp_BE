@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { messageController } from '../controllers/message.controller';
-import { authenticate } from '../middleware/auth';
+import { authenticate, authorize } from '../middleware/auth';
 import { asyncHandler } from '../middleware/error';
+import { UserRole } from '../types';
 
 const router = Router();
 
@@ -13,6 +14,27 @@ router.post('/send', asyncHandler(messageController.sendMessage.bind(messageCont
 
 // Get unread count (must be before /:conversationId to avoid conflict)
 router.get('/unread-count', asyncHandler(messageController.getUnreadCount.bind(messageController)));
+
+// Admin: Get all support conversations (any conversation involving any admin user)
+router.get(
+  '/admin/conversations',
+  authorize(UserRole.ADMIN, UserRole.SUPER_ADMIN),
+  asyncHandler(messageController.getAdminConversations.bind(messageController))
+);
+
+// Admin: Send message as the shared support user (all admins reply in same thread)
+router.post(
+  '/admin/send',
+  authorize(UserRole.ADMIN, UserRole.SUPER_ADMIN),
+  asyncHandler(messageController.adminSendMessage.bind(messageController))
+);
+
+// Admin: Get messages in any conversation (no sender/receiver filter)
+router.get(
+  '/admin/conversations/:conversationId',
+  authorize(UserRole.ADMIN, UserRole.SUPER_ADMIN),
+  asyncHandler(messageController.getAdminMessages.bind(messageController))
+);
 
 // Get user's conversations
 router.get('/conversations', asyncHandler(messageController.getConversations.bind(messageController)));

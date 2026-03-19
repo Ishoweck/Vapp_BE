@@ -100,6 +100,18 @@ export class AuthController {
     // Create wallet for user
     await Wallet.create({ user: user._id });
 
+    // Generate a password reset code so the guest can set their own password later
+    const resetCode = generateResetCode();
+    const hashedResetCode = crypto.createHash('sha256').update(resetCode).digest('hex');
+    user.resetPasswordToken = hashedResetCode;
+    user.resetPasswordExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+    await user.save();
+
+    // Send password setup email in background (non-blocking)
+    sendPasswordResetEmail(email, resetCode).catch((err: any) => {
+      console.error('Failed to send guest password setup email:', err);
+    });
+
     // Generate tokens
     const tokens = generateTokens(user._id, user.email, user.role);
 
@@ -521,6 +533,32 @@ async forgotPassword(req: AuthRequest, res: Response<ApiResponse>): Promise<void
           phoneVerified: user.phoneVerified,
           isAffiliate: user.isAffiliate,
           affiliateCode: user.affiliateCode,
+        },
+      },
+    });
+  }
+
+  /**
+   * Get support user (first admin/super_admin) for chat
+   */
+  async getSupportUser(req: AuthRequest, res: Response<ApiResponse>): Promise<void> {
+    const supportUser = await User.findOne({
+      role: { $in: ['admin', 'super_admin'] },
+      status: UserStatus.ACTIVE,
+    }).select('_id firstName lastName avatar');
+
+    if (!supportUser) {
+      throw new AppError('Support user not available', 404);
+    }
+
+    res.json({
+      success: true,
+      data: {
+        user: {
+          id: supportUser._id,
+          firstName: supportUser.firstName,
+          lastName: supportUser.lastName,
+          avatar: supportUser.avatar,
         },
       },
     });

@@ -42,6 +42,10 @@ export declare class AuthController {
      */
     getMe(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
     /**
+     * Get support user (first admin/super_admin) for chat
+     */
+    getSupportUser(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
+    /**
      * Update profile
      */
     updateProfile(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;

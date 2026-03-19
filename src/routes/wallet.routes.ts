@@ -17,9 +17,6 @@ const topUpValidation = [
 
 const withdrawalValidation = [
   body('amount').isFloat({ min: 1000 }).withMessage('Minimum withdrawal amount is ₦1,000'),
-  body('bankDetails.accountNumber').notEmpty().withMessage('Account number is required'),
-  body('bankDetails.bankCode').notEmpty().withMessage('Bank code is required'),
-  body('bankDetails.accountName').notEmpty().withMessage('Account name is required'),
 ];
 
 const transferValidation = [

@@ -6,7 +6,7 @@
 
 import { Router } from 'express';
 import { vendorController } from '../controllers/vendor.controller';
-import { authenticate, authorize } from '../middleware/auth';
+import { authenticate, authorize, optionalAuth } from '../middleware/auth';
 import { asyncHandler } from '../middleware/error';
 import { body } from 'express-validator';
 import { validate } from '../middleware/validation';
@@ -34,6 +34,7 @@ router.get(
  */
 router.get(
   '/top',
+  optionalAuth,
   asyncHandler(vendorController.getTopVendors.bind(vendorController))
 );
 
@@ -43,6 +44,7 @@ router.get(
  */
 router.get(
   '/public/:vendorId',
+  optionalAuth,
   asyncHandler(vendorController.getPublicVendorProfile.bind(vendorController))
 );
 

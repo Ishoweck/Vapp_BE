@@ -7,6 +7,21 @@ export declare class MessageController {
      */
     sendMessage(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
     /**
+     * Admin: Send message AS the shared support user (so all admins reply in the same thread)
+     * POST /messages/admin/send
+     */
+    adminSendMessage(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
+    /**
+     * Admin: Get messages in any conversation (no sender/receiver filter)
+     * GET /messages/admin/conversations/:conversationId
+     */
+    getAdminMessages(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
+    /**
+     * Admin: Get ALL support conversations (any conversation involving any admin/super_admin)
+     * GET /messages/admin/conversations
+     */
+    getAdminConversations(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
+    /**
      * Get user's conversations
      * GET /messages/conversations
      */

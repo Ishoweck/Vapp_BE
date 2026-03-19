@@ -152,7 +152,7 @@ class DisputeController {
         logger_1.logger.info(`✅ Dispute created: ${disputeNumber} for order ${order.orderNumber}`);
         // Notify both parties
         try {
-            await notification_service_1.notificationService.disputeCreated(order._id.toString(), order.orderNumber, vendorId, req.user.id);
+            await notification_service_1.notificationService.disputeCreated(order._id.toString(), order.orderNumber, vendorId, req.user.id, dispute._id.toString());
         }
         catch (error) {
             logger_1.logger.error('Error sending dispute notification:', error);
@@ -492,7 +492,7 @@ class DisputeController {
             const resolutionMessage = refundType === 'none'
                 ? 'Rejected — no refund issued.'
                 : `${refundType === 'full' ? 'Full' : 'Partial'} refund of ₦${finalRefundAmount.toLocaleString()} issued.`;
-            await notification_service_1.notificationService.disputeResolved(order._id.toString(), dispute.orderNumber, dispute.vendor.toString(), dispute.user.toString(), resolutionMessage);
+            await notification_service_1.notificationService.disputeResolved(order._id.toString(), dispute.orderNumber, dispute.vendor.toString(), dispute.user.toString(), resolutionMessage, dispute._id.toString());
         }
         catch (error) {
             logger_1.logger.error('Error sending dispute resolution notification:', error);

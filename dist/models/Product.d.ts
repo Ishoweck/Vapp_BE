@@ -20,6 +20,8 @@ export interface IProduct extends Document {
     variants: IProductVariant[];
     tags: string[];
     status: ProductStatus;
+    isFlashSale: boolean;
+    flashSaleEndsAt?: Date;
     isFeatured: boolean;
     isAffiliate: boolean;
     affiliateCommission: number;

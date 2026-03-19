@@ -21,6 +21,8 @@ export interface IProduct extends Document {
   variants: IProductVariant[];
   tags: string[];
   status: ProductStatus;
+  isFlashSale: boolean;
+  flashSaleEndsAt?: Date;
   isFeatured: boolean;
   isAffiliate: boolean;
   affiliateCommission: number;
@@ -157,6 +159,14 @@ const productSchema = new Schema<IProduct>({
     type: String,
     enum: Object.values(ProductStatus),
     default: ProductStatus.PENDING_APPROVAL,
+  },
+  isFlashSale: {
+    type: Boolean,
+    default: false,
+  },
+  flashSaleEndsAt: {
+    type: Date,
+    default: null,
   },
   isFeatured: {
     type: Boolean,

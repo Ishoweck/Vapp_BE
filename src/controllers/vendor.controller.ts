@@ -6,7 +6,7 @@
 
 import { Request, Response } from 'express';
 import axios from 'axios';
-import { AuthRequest, ApiResponse, VendorVerificationStatus, UserRole } from '../types';
+import { AuthRequest, ApiResponse, VendorVerificationStatus, UserRole, NotificationType } from '../types';
 import VendorProfile from '../models/VendorProfile';
 import Product from '../models/Product';
 import Order from '../models/Order';
@@ -129,6 +129,25 @@ export class VendorController {
     await vendorProfile.save();
 
     logger.info(`User ${userId} followed vendor ${vendorId}`);
+
+    // Send notification to vendor about new follower
+    try {
+      const followerUser = await User.findById(userId).select('firstName lastName');
+      const followerName = followerUser
+        ? `${followerUser.firstName} ${followerUser.lastName}`.trim()
+        : 'Someone';
+
+      await notificationService.send({
+        userId: vendorId,
+        type: NotificationType.SYSTEM,
+        title: 'New Follower',
+        message: `${followerName} started following your store!`,
+        data: { followerId: userId, followersCount: vendorProfile.followers.length },
+        link: '/vendor/profile',
+      });
+    } catch (error) {
+      logger.error('Error sending follow notification:', error);
+    }
 
     res.json({
       success: true,

@@ -2162,7 +2162,8 @@ export const resolveDispute = asyncHandler(
       dispute.orderNumber,
       dispute.vendor.toString(),
       dispute.user.toString(),
-      resolution
+      resolution,
+      dispute._id.toString()
     );
 
     res.json({

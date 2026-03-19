@@ -26,12 +26,12 @@ router.get('/banks', (0, error_1.asyncHandler)(vendor_controller_1.vendorControl
  * Get top vendors for home screen
  * Query: ?limit=10&sortBy=rating
  */
-router.get('/top', (0, error_1.asyncHandler)(vendor_controller_1.vendorController.getTopVendors.bind(vendor_controller_1.vendorController)));
+router.get('/top', auth_1.optionalAuth, (0, error_1.asyncHandler)(vendor_controller_1.vendorController.getTopVendors.bind(vendor_controller_1.vendorController)));
 /**
  * GET /api/v1/vendor/public/:vendorId
  * Get public vendor profile with products
  */
-router.get('/public/:vendorId', (0, error_1.asyncHandler)(vendor_controller_1.vendorController.getPublicVendorProfile.bind(vendor_controller_1.vendorController)));
+router.get('/public/:vendorId', auth_1.optionalAuth, (0, error_1.asyncHandler)(vendor_controller_1.vendorController.getPublicVendorProfile.bind(vendor_controller_1.vendorController)));
 // ============================================================
 // AUTHENTICATED ROUTES
 // ============================================================

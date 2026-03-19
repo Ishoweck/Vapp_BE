@@ -98,6 +98,11 @@ export declare class OrderController {
      */
     updateOrderStatus(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
     /**
+     * Complete order (customer confirms delivery)
+     * Only the order's customer can complete it, and only if status is in_transit or delivered
+     */
+    completeOrder(req: AuthRequest, res: Response): Promise<void>;
+    /**
      * Helper methods
      */
     private getDefaultRate;

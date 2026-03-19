@@ -84,7 +84,8 @@ export declare enum NotificationType {
     ACCOUNT = "account",
     CHAT = "chat",
     REVIEW = "review",
-    SYSTEM = "system"
+    SYSTEM = "system",
+    CHALLENGE = "challenge"
 }
 export declare enum ChallengeType {
     BUYER = "buyer",

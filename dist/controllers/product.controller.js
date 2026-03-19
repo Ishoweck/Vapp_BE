@@ -90,6 +90,8 @@ class ProductController {
                 delete productData.digitalFileVersion;
                 console.log('✅ Digital file uploaded successfully');
             }
+            // Force status to PENDING_APPROVAL - never trust client-sent status for new products
+            productData.status = types_1.ProductStatus.PENDING_APPROVAL;
             console.log('📦 Creating product in database...');
             // Create product in database
             const product = await Product_1.default.create(productData);
@@ -504,6 +506,72 @@ class ProductController {
                 limit,
                 hasMore: false
             }
+        });
+    }
+    /**
+     * Get flash sale products (active, >=10% discount, isFlashSale=true, not expired)
+     */
+    async getFlashSaleProducts(req, res) {
+        const limit = parseInt(req.query.limit) || 20;
+        const now = new Date();
+        const products = await Product_1.default.find({
+            status: types_1.ProductStatus.ACTIVE,
+            isFlashSale: true,
+            quantity: { $gt: 0 },
+            compareAtPrice: { $exists: true, $gt: 0 },
+            $expr: { $lt: ['$price', '$compareAtPrice'] },
+            $or: [
+                { flashSaleEndsAt: null },
+                { flashSaleEndsAt: { $gt: now } },
+            ],
+        })
+            .populate('vendor', 'firstName lastName profileImage')
+            .populate('category', 'name')
+            .sort({ updatedAt: -1 })
+            .limit(limit)
+            .lean();
+        const formattedProducts = products.map(this.formatProduct);
+        res.json({
+            success: true,
+            message: 'Flash sale products fetched',
+            data: { products: formattedProducts, total: products.length, page: 1, limit, hasMore: false },
+        });
+    }
+    /**
+     * Toggle flash sale on a product. Vendor must own the product and it must have >=10% discount.
+     */
+    async toggleFlashSale(req, res) {
+        const { id } = req.params;
+        const { enable, durationHours } = req.body; // enable: boolean, durationHours: number (optional, default 48)
+        const product = await Product_1.default.findById(id);
+        if (!product)
+            throw new error_1.AppError('Product not found', 404);
+        // Verify ownership
+        if (product.vendor.toString() !== req.user?.id) {
+            throw new error_1.AppError('You can only modify your own products', 403);
+        }
+        if (enable) {
+            // Validate >=10% discount
+            if (!product.compareAtPrice || product.compareAtPrice <= product.price) {
+                throw new error_1.AppError('Product must have a compare-at price higher than the sale price', 400);
+            }
+            const discountPercent = ((product.compareAtPrice - product.price) / product.compareAtPrice) * 100;
+            if (discountPercent < 10) {
+                throw new error_1.AppError('Product must be at least 10% off to activate flash sale', 400);
+            }
+            product.isFlashSale = true;
+            const hours = durationHours || 48;
+            product.flashSaleEndsAt = new Date(Date.now() + hours * 60 * 60 * 1000);
+        }
+        else {
+            product.isFlashSale = false;
+            product.flashSaleEndsAt = undefined;
+        }
+        await product.save();
+        res.json({
+            success: true,
+            message: enable ? 'Flash sale activated' : 'Flash sale deactivated',
+            data: { product: this.formatProduct(product) },
         });
     }
     // NEW: Get Vendor Products

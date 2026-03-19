@@ -2668,6 +2668,109 @@
     }
 
     /**
+     * Complete order (customer confirms delivery)
+     * Only the order's customer can complete it, and only if status is in_transit or delivered
+     */
+    async completeOrder(req: AuthRequest, res: Response) {
+      const { id } = req.params;
+      const userId = req.user!.id;
+
+      const order = await Order.findById(id);
+      if (!order) {
+        throw new AppError('Order not found', 404);
+      }
+
+      // Verify the requesting user is the order's customer
+      const orderUserId = order.user.toString();
+
+      if (orderUserId !== userId) {
+        throw new AppError('You are not authorized to complete this order', 403);
+      }
+
+      // Verify order is in a completable state
+      if (order.status !== OrderStatus.IN_TRANSIT && order.status !== OrderStatus.DELIVERED) {
+        throw new AppError(
+          `Order cannot be completed from status "${order.status}". Must be "in_transit" or "delivered".`,
+          400
+        );
+      }
+
+      order.status = OrderStatus.DELIVERED;
+      await order.save();
+
+      // Credit vendor wallets with their earnings
+      try {
+        // Group items by vendor and calculate each vendor's total
+        const vendorEarnings = new Map<string, number>();
+        for (const item of order.items) {
+          const vendorId = item.vendor.toString();
+          const itemTotal = item.price * item.quantity;
+          vendorEarnings.set(vendorId, (vendorEarnings.get(vendorId) || 0) + itemTotal);
+        }
+
+        // Credit each vendor's wallet
+        for (const [vendorId, amount] of vendorEarnings) {
+          let vendorWallet = await Wallet.findOne({ user: vendorId });
+          if (!vendorWallet) {
+            vendorWallet = await Wallet.create({ user: vendorId });
+          }
+
+          vendorWallet.balance += amount;
+          vendorWallet.totalEarned += amount;
+          vendorWallet.transactions.push({
+            type: TransactionType.CREDIT,
+            amount,
+            purpose: WalletPurpose.COMMISSION,
+            reference: `order_${order.orderNumber}_${Date.now()}`,
+            description: `Payment for Order #${order.orderNumber}`,
+            relatedOrder: order._id,
+            status: 'completed',
+            timestamp: new Date(),
+          } as any);
+
+          await vendorWallet.save();
+          logger.info(`Credited ₦${amount} to vendor ${vendorId} for order ${order.orderNumber}`);
+        }
+
+        // Handle affiliate commission if applicable
+        if (order.affiliateUser && order.affiliateCommission) {
+          let affiliateWallet = await Wallet.findOne({ user: order.affiliateUser });
+          if (!affiliateWallet) {
+            affiliateWallet = await Wallet.create({ user: order.affiliateUser });
+          }
+
+          const commissionAmount = order.affiliateCommission;
+          affiliateWallet.balance += commissionAmount;
+          affiliateWallet.totalEarned += commissionAmount;
+          affiliateWallet.transactions.push({
+            type: TransactionType.CREDIT,
+            amount: commissionAmount,
+            purpose: WalletPurpose.COMMISSION,
+            reference: `affiliate_${order.orderNumber}_${Date.now()}`,
+            description: `Affiliate commission for Order #${order.orderNumber}`,
+            relatedOrder: order._id,
+            status: 'completed',
+            timestamp: new Date(),
+          } as any);
+
+          await affiliateWallet.save();
+          logger.info(`Credited ₦${commissionAmount} affiliate commission for order ${order.orderNumber}`);
+        }
+      } catch (walletError) {
+        // Log but don't fail the order completion
+        logger.error(`Error crediting vendor wallets for order ${order.orderNumber}:`, walletError);
+      }
+
+      logger.info(`Order ${order.orderNumber} completed by customer ${userId}`);
+
+      res.json({
+        success: true,
+        message: 'Order completed successfully',
+        data: { order },
+      });
+    }
+
+    /**
      * Helper methods
      */
     private getDefaultRate(deliveryType: string): number {

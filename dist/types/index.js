@@ -110,6 +110,7 @@ var NotificationType;
     NotificationType["CHAT"] = "chat";
     NotificationType["REVIEW"] = "review";
     NotificationType["SYSTEM"] = "system";
+    NotificationType["CHALLENGE"] = "challenge";
 })(NotificationType || (exports.NotificationType = NotificationType = {}));
 // Challenge Types
 var ChallengeType;

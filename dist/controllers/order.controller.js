@@ -2239,6 +2239,92 @@ class OrderController {
         });
     }
     /**
+     * Complete order (customer confirms delivery)
+     * Only the order's customer can complete it, and only if status is in_transit or delivered
+     */
+    async completeOrder(req, res) {
+        const { id } = req.params;
+        const userId = req.user.id;
+        const order = await Order_1.default.findById(id);
+        if (!order) {
+            throw new error_1.AppError('Order not found', 404);
+        }
+        // Verify the requesting user is the order's customer
+        const orderUserId = order.user.toString();
+        if (orderUserId !== userId) {
+            throw new error_1.AppError('You are not authorized to complete this order', 403);
+        }
+        // Verify order is in a completable state
+        if (order.status !== types_1.OrderStatus.IN_TRANSIT && order.status !== types_1.OrderStatus.DELIVERED) {
+            throw new error_1.AppError(`Order cannot be completed from status "${order.status}". Must be "in_transit" or "delivered".`, 400);
+        }
+        order.status = types_1.OrderStatus.DELIVERED;
+        await order.save();
+        // Credit vendor wallets with their earnings
+        try {
+            // Group items by vendor and calculate each vendor's total
+            const vendorEarnings = new Map();
+            for (const item of order.items) {
+                const vendorId = item.vendor.toString();
+                const itemTotal = item.price * item.quantity;
+                vendorEarnings.set(vendorId, (vendorEarnings.get(vendorId) || 0) + itemTotal);
+            }
+            // Credit each vendor's wallet
+            for (const [vendorId, amount] of vendorEarnings) {
+                let vendorWallet = await Additional_1.Wallet.findOne({ user: vendorId });
+                if (!vendorWallet) {
+                    vendorWallet = await Additional_1.Wallet.create({ user: vendorId });
+                }
+                vendorWallet.balance += amount;
+                vendorWallet.totalEarned += amount;
+                vendorWallet.transactions.push({
+                    type: types_1.TransactionType.CREDIT,
+                    amount,
+                    purpose: types_1.WalletPurpose.COMMISSION,
+                    reference: `order_${order.orderNumber}_${Date.now()}`,
+                    description: `Payment for Order #${order.orderNumber}`,
+                    relatedOrder: order._id,
+                    status: 'completed',
+                    timestamp: new Date(),
+                });
+                await vendorWallet.save();
+                logger_1.logger.info(`Credited ₦${amount} to vendor ${vendorId} for order ${order.orderNumber}`);
+            }
+            // Handle affiliate commission if applicable
+            if (order.affiliateUser && order.affiliateCommission) {
+                let affiliateWallet = await Additional_1.Wallet.findOne({ user: order.affiliateUser });
+                if (!affiliateWallet) {
+                    affiliateWallet = await Additional_1.Wallet.create({ user: order.affiliateUser });
+                }
+                const commissionAmount = order.affiliateCommission;
+                affiliateWallet.balance += commissionAmount;
+                affiliateWallet.totalEarned += commissionAmount;
+                affiliateWallet.transactions.push({
+                    type: types_1.TransactionType.CREDIT,
+                    amount: commissionAmount,
+                    purpose: types_1.WalletPurpose.COMMISSION,
+                    reference: `affiliate_${order.orderNumber}_${Date.now()}`,
+                    description: `Affiliate commission for Order #${order.orderNumber}`,
+                    relatedOrder: order._id,
+                    status: 'completed',
+                    timestamp: new Date(),
+                });
+                await affiliateWallet.save();
+                logger_1.logger.info(`Credited ₦${commissionAmount} affiliate commission for order ${order.orderNumber}`);
+            }
+        }
+        catch (walletError) {
+            // Log but don't fail the order completion
+            logger_1.logger.error(`Error crediting vendor wallets for order ${order.orderNumber}:`, walletError);
+        }
+        logger_1.logger.info(`Order ${order.orderNumber} completed by customer ${userId}`);
+        res.json({
+            success: true,
+            message: 'Order completed successfully',
+            data: { order },
+        });
+    }
+    /**
      * Helper methods
      */
     getDefaultRate(deliveryType) {

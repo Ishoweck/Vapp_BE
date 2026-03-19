@@ -112,6 +112,24 @@ class VendorController {
         vendorProfile.followers.push(userId);
         await vendorProfile.save();
         logger_1.logger.info(`User ${userId} followed vendor ${vendorId}`);
+        // Send notification to vendor about new follower
+        try {
+            const followerUser = await User_1.default.findById(userId).select('firstName lastName');
+            const followerName = followerUser
+                ? `${followerUser.firstName} ${followerUser.lastName}`.trim()
+                : 'Someone';
+            await notification_service_1.notificationService.send({
+                userId: vendorId,
+                type: types_1.NotificationType.SYSTEM,
+                title: 'New Follower',
+                message: `${followerName} started following your store!`,
+                data: { followerId: userId, followersCount: vendorProfile.followers.length },
+                link: '/vendor/profile',
+            });
+        }
+        catch (error) {
+            logger_1.logger.error('Error sending follow notification:', error);
+        }
         res.json({
             success: true,
             message: 'Vendor followed successfully',

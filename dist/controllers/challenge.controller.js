@@ -10,6 +10,7 @@ const User_1 = __importDefault(require("../models/User"));
 const Additional_2 = require("../models/Additional");
 const error_1 = require("../middleware/error");
 const logger_1 = require("../utils/logger");
+const notification_service_1 = require("../services/notification.service");
 class ChallengeController {
     /**
      * Create challenge (Admin only)
@@ -30,6 +31,8 @@ class ChallengeController {
             recurringPeriod,
         });
         logger_1.logger.info(`Challenge created: ${challenge.title}`);
+        // Notify all relevant users about the new challenge
+        notification_service_1.notificationService.newChallengeCreated(challenge._id.toString(), challenge.title, challenge.description, challenge.type).catch((err) => logger_1.logger.error('Failed to send new challenge notifications:', err.message));
         res.status(201).json({
             success: true,
             message: 'Challenge created successfully',
@@ -173,6 +176,8 @@ class ChallengeController {
                     participation.completed = true;
                     participation.completedAt = new Date();
                     logger_1.logger.info(`Challenge completed: ${challenge.title} by user ${userId}`);
+                    // Notify user that they completed the challenge
+                    notification_service_1.notificationService.challengeCompleted(userId, challenge._id.toString(), challenge.title).catch((err) => logger_1.logger.error('Failed to send challenge completion notification:', err.message));
                 }
                 await challenge.save();
             }
@@ -229,6 +234,8 @@ class ChallengeController {
         participation.rewardClaimed = true;
         await challenge.save();
         logger_1.logger.info(`Reward claimed: ${challenge.title} by user ${req.user?.id}`);
+        // Notify user that their reward has been credited
+        notification_service_1.notificationService.challengeRewardClaimed(req.user?.id, challenge._id.toString(), challenge.title, challenge.rewardType, challenge.rewardValue).catch((err) => logger_1.logger.error('Failed to send reward claimed notification:', err.message));
         res.json({
             success: true,
             message: 'Reward claimed successfully',

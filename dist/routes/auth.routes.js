@@ -51,6 +51,8 @@ router.post('/refresh-token', (0, error_1.asyncHandler)(auth_controller_1.authCo
 // OAuth routes
 router.post('/oauth/google', (0, validation_1.validate)(googleLoginValidation), (0, error_1.asyncHandler)(oauthController_1.oauthController.googleLogin.bind(oauthController_1.oauthController)));
 router.post('/oauth/apple', (0, validation_1.validate)(appleLoginValidation), (0, error_1.asyncHandler)(oauthController_1.oauthController.appleLogin.bind(oauthController_1.oauthController)));
+// Get support user (public - returns the first admin/super_admin user for chat)
+router.get('/support-user', (0, error_1.asyncHandler)(auth_controller_1.authController.getSupportUser.bind(auth_controller_1.authController)));
 // Protected routes
 router.get('/me', auth_1.authenticate, (0, error_1.asyncHandler)(auth_controller_1.authController.getMe.bind(auth_controller_1.authController)));
 router.put('/profile', auth_1.authenticate, (0, error_1.asyncHandler)(auth_controller_1.authController.updateProfile.bind(auth_controller_1.authController)));

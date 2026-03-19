@@ -15,9 +15,6 @@ const topUpValidation = [
 ];
 const withdrawalValidation = [
     (0, express_validator_1.body)('amount').isFloat({ min: 1000 }).withMessage('Minimum withdrawal amount is ₦1,000'),
-    (0, express_validator_1.body)('bankDetails.accountNumber').notEmpty().withMessage('Account number is required'),
-    (0, express_validator_1.body)('bankDetails.bankCode').notEmpty().withMessage('Bank code is required'),
-    (0, express_validator_1.body)('bankDetails.accountName').notEmpty().withMessage('Account name is required'),
 ];
 const transferValidation = [
     (0, express_validator_1.body)('recipientEmail').isEmail().withMessage('Valid recipient email is required'),

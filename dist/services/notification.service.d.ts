@@ -47,10 +47,22 @@ declare class NotificationService {
     welcomeNotification(userId: string, firstName: string): Promise<void>;
     vendorVerified(userId: string): Promise<void>;
     vendorRejected(userId: string, reason?: string): Promise<void>;
-    disputeCreated(orderId: string, orderNumber: string, vendorId: string, buyerId: string): Promise<void>;
-    disputeResolved(orderId: string, orderNumber: string, vendorId: string, buyerId: string, resolution: string): Promise<void>;
+    disputeCreated(orderId: string, orderNumber: string, vendorId: string, buyerId: string, disputeId?: string): Promise<void>;
+    disputeResolved(orderId: string, orderNumber: string, vendorId: string, buyerId: string, resolution: string, disputeId?: string): Promise<void>;
     referralSignup(referrerId: string, refereeName: string): Promise<void>;
     referralPurchase(referrerId: string, commission: number): Promise<void>;
+    /**
+     * Notify relevant users when a new challenge is created
+     */
+    newChallengeCreated(challengeId: string, title: string, description: string, type: 'buyer' | 'seller' | 'affiliate'): Promise<void>;
+    /**
+     * Notify a user when they complete a challenge
+     */
+    challengeCompleted(userId: string, challengeId: string, challengeTitle: string): Promise<void>;
+    /**
+     * Notify a user when they claim a challenge reward
+     */
+    challengeRewardClaimed(userId: string, challengeId: string, challengeTitle: string, rewardType: string, rewardValue: number): Promise<void>;
     vendorSaleCompleted(vendorId: string, orderNumber: string, amount: number, commission: number): Promise<void>;
 }
 export declare const notificationService: NotificationService;

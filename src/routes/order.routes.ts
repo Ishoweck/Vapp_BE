@@ -163,6 +163,12 @@ router.post(
 // PUT ROUTES
 // ============================================================
 
+// Customer complete order (confirm delivery)
+router.put(
+  '/:id/complete',
+  asyncHandler(orderController.completeOrder.bind(orderController))
+);
+
 // Vendor update order status
 router.put(
   '/:id/status',

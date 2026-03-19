@@ -483,13 +483,13 @@ class NotificationService {
   // DISPUTE NOTIFICATIONS
   // ================================================================
 
-  async disputeCreated(orderId: string, orderNumber: string, vendorId: string, buyerId: string): Promise<void> {
+  async disputeCreated(orderId: string, orderNumber: string, vendorId: string, buyerId: string, disputeId?: string): Promise<void> {
     await this.send({
       userId: vendorId,
       type: NotificationType.ORDER,
       title: 'Dispute Filed',
       message: `A dispute has been filed for order #${orderNumber}. Please review and respond.`,
-      data: { orderId, orderNumber },
+      data: { orderId, orderNumber, disputeId },
       link: `/vendor/disputes`,
     });
 
@@ -498,12 +498,12 @@ class NotificationService {
       type: NotificationType.ORDER,
       title: 'Dispute Submitted',
       message: `Your dispute for order #${orderNumber} has been submitted. We'll keep you updated.`,
-      data: { orderId, orderNumber },
+      data: { orderId, orderNumber, disputeId },
       link: `/disputes`,
     });
   }
 
-  async disputeResolved(orderId: string, orderNumber: string, vendorId: string, buyerId: string, resolution: string): Promise<void> {
+  async disputeResolved(orderId: string, orderNumber: string, vendorId: string, buyerId: string, resolution: string, disputeId?: string): Promise<void> {
     const message = `The dispute for order #${orderNumber} has been resolved: ${resolution}`;
 
     await this.send({
@@ -511,7 +511,7 @@ class NotificationService {
       type: NotificationType.ORDER,
       title: 'Dispute Resolved',
       message,
-      data: { orderId, orderNumber, resolution },
+      data: { orderId, orderNumber, resolution, disputeId },
       link: `/vendor/disputes`,
     });
 
@@ -520,7 +520,7 @@ class NotificationService {
       type: NotificationType.ORDER,
       title: 'Dispute Resolved',
       message,
-      data: { orderId, orderNumber, resolution },
+      data: { orderId, orderNumber, resolution, disputeId },
       link: `/disputes`,
     });
   }
@@ -548,6 +548,75 @@ class NotificationService {
       message: `You earned ₦${commission.toLocaleString()} from a referral purchase!`,
       data: { commission },
       link: '/wallet',
+    });
+  }
+
+  // ================================================================
+  // VENDOR SALES NOTIFICATION
+  // ================================================================
+
+  // ================================================================
+  // CHALLENGE NOTIFICATIONS
+  // ================================================================
+
+  /**
+   * Notify relevant users when a new challenge is created
+   */
+  async newChallengeCreated(challengeId: string, title: string, description: string, type: 'buyer' | 'seller' | 'affiliate'): Promise<void> {
+    // Map challenge type to user role / filter
+    let filter: any = {};
+    if (type === 'buyer') {
+      filter.role = 'customer';
+    } else if (type === 'seller') {
+      filter.role = 'vendor';
+    } else if (type === 'affiliate') {
+      filter.isAffiliate = true;
+    }
+
+    const users = await User.find(filter).select('_id');
+    const userIds = users.map((u) => u._id.toString());
+
+    if (userIds.length === 0) return;
+
+    await this.sendToMany({
+      userIds,
+      type: NotificationType.CHALLENGE,
+      title: 'New Challenge Available!',
+      message: `"${title}" - ${description}`,
+      data: { challengeId },
+      link: '/challenges',
+    });
+  }
+
+  /**
+   * Notify a user when they complete a challenge
+   */
+  async challengeCompleted(userId: string, challengeId: string, challengeTitle: string): Promise<void> {
+    await this.send({
+      userId,
+      type: NotificationType.CHALLENGE,
+      title: 'Challenge Completed!',
+      message: `Congratulations! You completed "${challengeTitle}". Claim your reward now!`,
+      data: { challengeId },
+      link: '/challenges',
+    });
+  }
+
+  /**
+   * Notify a user when they claim a challenge reward
+   */
+  async challengeRewardClaimed(userId: string, challengeId: string, challengeTitle: string, rewardType: string, rewardValue: number): Promise<void> {
+    const rewardText = rewardType === 'cash'
+      ? `₦${rewardValue.toLocaleString()} has been added to your wallet`
+      : `${rewardValue} points have been added to your account`;
+
+    await this.send({
+      userId,
+      type: NotificationType.CHALLENGE,
+      title: 'Reward Claimed!',
+      message: `Your reward for "${challengeTitle}" has been credited. ${rewardText}.`,
+      data: { challengeId, rewardType, rewardValue },
+      link: '/challenges',
     });
   }
 

@@ -7,6 +7,7 @@ import Product from '../models/Product';
 import { Wallet } from '../models/Additional';
 import { AppError } from '../middleware/error';
 import { logger } from '../utils/logger';
+import { notificationService } from '../services/notification.service';
 
 export class ChallengeController {
   /**
@@ -42,6 +43,14 @@ export class ChallengeController {
     });
 
     logger.info(`Challenge created: ${challenge.title}`);
+
+    // Notify all relevant users about the new challenge
+    notificationService.newChallengeCreated(
+      challenge._id.toString(),
+      challenge.title,
+      challenge.description,
+      challenge.type as 'buyer' | 'seller' | 'affiliate'
+    ).catch((err) => logger.error('Failed to send new challenge notifications:', err.message));
 
     res.status(201).json({
       success: true,
@@ -222,6 +231,13 @@ export class ChallengeController {
           participation.completedAt = new Date();
 
           logger.info(`Challenge completed: ${challenge.title} by user ${userId}`);
+
+          // Notify user that they completed the challenge
+          notificationService.challengeCompleted(
+            userId,
+            challenge._id.toString(),
+            challenge.title
+          ).catch((err) => logger.error('Failed to send challenge completion notification:', err.message));
         }
 
         await challenge.save();
@@ -291,6 +307,15 @@ export class ChallengeController {
     await challenge.save();
 
     logger.info(`Reward claimed: ${challenge.title} by user ${req.user?.id}`);
+
+    // Notify user that their reward has been credited
+    notificationService.challengeRewardClaimed(
+      req.user?.id as string,
+      challenge._id.toString(),
+      challenge.title,
+      challenge.rewardType,
+      challenge.rewardValue
+    ).catch((err) => logger.error('Failed to send reward claimed notification:', err.message));
 
     res.json({
       success: true,

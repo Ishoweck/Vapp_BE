@@ -1738,7 +1738,7 @@ exports.resolveDispute = (0, ayncHandler_1.asyncHandler)(async (req, res) => {
         }
     }
     // Notify both parties
-    await notification_service_1.notificationService.disputeResolved(dispute.order.toString(), dispute.orderNumber, dispute.vendor.toString(), dispute.user.toString(), resolution);
+    await notification_service_1.notificationService.disputeResolved(dispute.order.toString(), dispute.orderNumber, dispute.vendor.toString(), dispute.user.toString(), resolution, dispute._id.toString());
     res.json({
         success: true,
         message: 'Dispute resolved successfully',

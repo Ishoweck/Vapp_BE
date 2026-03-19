@@ -11,6 +11,14 @@ export declare class ProductController {
     searchProducts(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
     getNewArrivals(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
     getProductsOnSale(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
+    /**
+     * Get flash sale products (active, >=10% discount, isFlashSale=true, not expired)
+     */
+    getFlashSaleProducts(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
+    /**
+     * Toggle flash sale on a product. Vendor must own the product and it must have >=10% discount.
+     */
+    toggleFlashSale(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
     getVendorProducts(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
     getTrendingProducts(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
     /**

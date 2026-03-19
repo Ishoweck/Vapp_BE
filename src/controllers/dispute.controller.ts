@@ -148,7 +148,8 @@ export class DisputeController {
         order._id.toString(),
         order.orderNumber,
         vendorId,
-        req.user!.id
+        req.user!.id,
+        dispute._id.toString()
       );
     } catch (error) {
       logger.error('Error sending dispute notification:', error);
@@ -553,7 +554,8 @@ export class DisputeController {
         dispute.orderNumber,
         dispute.vendor.toString(),
         dispute.user.toString(),
-        resolutionMessage
+        resolutionMessage,
+        dispute._id.toString()
       );
     } catch (error) {
       logger.error('Error sending dispute resolution notification:', error);

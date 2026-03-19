@@ -126,6 +126,14 @@ const productSchema = new mongoose_1.Schema({
         enum: Object.values(types_1.ProductStatus),
         default: types_1.ProductStatus.PENDING_APPROVAL,
     },
+    isFlashSale: {
+        type: Boolean,
+        default: false,
+    },
+    flashSaleEndsAt: {
+        type: Date,
+        default: null,
+    },
     isFeatured: {
         type: Boolean,
         default: false,

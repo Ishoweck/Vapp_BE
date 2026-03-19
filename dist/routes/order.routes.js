@@ -109,6 +109,8 @@ router.post('/:id/cancel', (0, validation_1.validate)(cancelOrderValidation), (0
 // ============================================================
 // PUT ROUTES
 // ============================================================
+// Customer complete order (confirm delivery)
+router.put('/:id/complete', (0, error_1.asyncHandler)(order_controller_1.orderController.completeOrder.bind(order_controller_1.orderController)));
 // Vendor update order status
 router.put('/:id/status', (0, auth_1.authorize)(types_1.UserRole.VENDOR, types_1.UserRole.ADMIN, types_1.UserRole.SUPER_ADMIN), (0, validation_1.validate)(updateStatusValidation), (0, error_1.asyncHandler)(order_controller_1.orderController.updateOrderStatus.bind(order_controller_1.orderController)));
 exports.default = router;

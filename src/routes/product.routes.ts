@@ -26,6 +26,9 @@ router.get('/new-arrivals', asyncHandler(productController.getNewArrivals.bind(p
 // Get products on sale
 router.get('/on-sale', asyncHandler(productController.getProductsOnSale.bind(productController)));
 
+// Get flash sale products
+router.get('/flash-sales', asyncHandler(productController.getFlashSaleProducts.bind(productController)));
+
 // Get trending products
 router.get('/trending', asyncHandler(productController.getTrendingProducts.bind(productController)));
 
@@ -65,6 +68,14 @@ router.post(
   authenticate,
   authorize(UserRole.VENDOR, UserRole.ADMIN, UserRole.SUPER_ADMIN),
   asyncHandler(productController.createProduct.bind(productController))
+);
+
+// Toggle flash sale on a product (vendor only, must have >=10% discount)
+router.put(
+  '/:id/flash-sale',
+  authenticate,
+  authorize(UserRole.VENDOR, UserRole.ADMIN, UserRole.SUPER_ADMIN),
+  asyncHandler(productController.toggleFlashSale.bind(productController))
 );
 
 // Update product (vendors, admins, super admins only)

@@ -108,7 +108,8 @@ export enum NotificationType {
   ACCOUNT = 'account',
   CHAT = 'chat',
   REVIEW = 'review',
-  SYSTEM = 'system'
+  SYSTEM = 'system',
+  CHALLENGE = 'challenge'
 }
 
 // Challenge Types
