@@ -2269,26 +2269,29 @@ class OrderController {
                 const itemTotal = item.price * item.quantity;
                 vendorEarnings.set(vendorId, (vendorEarnings.get(vendorId) || 0) + itemTotal);
             }
-            // Credit each vendor's wallet
+            // Credit each vendor's wallet (after deducting 8% platform commission)
+            const PLATFORM_COMMISSION_RATE = 0.08;
             for (const [vendorId, amount] of vendorEarnings) {
                 let vendorWallet = await Additional_1.Wallet.findOne({ user: vendorId });
                 if (!vendorWallet) {
                     vendorWallet = await Additional_1.Wallet.create({ user: vendorId });
                 }
-                vendorWallet.balance += amount;
-                vendorWallet.totalEarned += amount;
+                const commission = Math.round(amount * PLATFORM_COMMISSION_RATE * 100) / 100;
+                const vendorAmount = Math.round((amount - commission) * 100) / 100;
+                vendorWallet.balance += vendorAmount;
+                vendorWallet.totalEarned += vendorAmount;
                 vendorWallet.transactions.push({
                     type: types_1.TransactionType.CREDIT,
-                    amount,
+                    amount: vendorAmount,
                     purpose: types_1.WalletPurpose.COMMISSION,
                     reference: `order_${order.orderNumber}_${Date.now()}`,
-                    description: `Payment for Order #${order.orderNumber}`,
+                    description: `Payment for Order #${order.orderNumber} (8% platform fee deducted)`,
                     relatedOrder: order._id,
                     status: 'completed',
                     timestamp: new Date(),
                 });
                 await vendorWallet.save();
-                logger_1.logger.info(`Credited ₦${amount} to vendor ${vendorId} for order ${order.orderNumber}`);
+                logger_1.logger.info(`Credited ₦${vendorAmount} to vendor ${vendorId} for order ${order.orderNumber} (commission: ₦${commission}, original: ₦${amount})`);
             }
             // Handle affiliate commission if applicable
             if (order.affiliateUser && order.affiliateCommission) {

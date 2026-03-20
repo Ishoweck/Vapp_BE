@@ -984,6 +984,17 @@ exports.updateProductStatus = (0, ayncHandler_1.asyncHandler)(async (req, res) =
         res.status(404).json({ success: false, message: 'Product not found' });
         return;
     }
+    // If approving (setting to active), check if vendor's store is verified
+    if (status === types_1.ProductStatus.ACTIVE) {
+        const vendorProfile = await VendorProfile_1.default.findOne({ user: product.vendor });
+        if (!vendorProfile || vendorProfile.verificationStatus !== 'verified') {
+            res.status(400).json({
+                success: false,
+                message: 'Cannot approve product - vendor store is not verified.',
+            });
+            return;
+        }
+    }
     product.status = status;
     await product.save();
     // Notify vendor

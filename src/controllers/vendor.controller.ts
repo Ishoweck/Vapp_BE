@@ -623,16 +623,33 @@ export class VendorController {
       quantity: 0,
     }).select('name slug images');
 
-    // Verification progress
+    // Verification progress (matches Store Setup screen: storefront, verification, bank account)
     let verificationProgress = 0;
-    const verificationSteps = [
-      vendorProfile.businessName ? 20 : 0,
-      vendorProfile.businessAddress?.street ? 20 : 0,
-      vendorProfile.businessPhone ? 20 : 0,
-      vendorProfile.payoutDetails ? 20 : 0,
-      vendorProfile.kycDocuments?.length > 0 ? 20 : 0,
-    ];
-    verificationProgress = verificationSteps.reduce((sum, step) => sum + step, 0);
+    const totalSteps = 3;
+    let completedSteps = 0;
+
+    // 1. Storefront: theme, banner, or custom message
+    const hasStorefront = !!(
+      vendorProfile.storefront?.theme ||
+      vendorProfile.storefront?.bannerImages?.length ||
+      vendorProfile.storefront?.customMessage ||
+      vendorProfile.businessBanner
+    );
+    if (hasStorefront) completedSteps++;
+
+    // 2. Verification: KYC documents uploaded or verified status
+    const hasVerification =
+      vendorProfile.verificationStatus === 'verified' ||
+      (vendorProfile.kycDocuments?.length > 0);
+    if (hasVerification) completedSteps++;
+
+    // 3. Bank account: payout details set up
+    const hasBankAccount = !!(
+      vendorProfile.payoutDetails?.accountNumber
+    );
+    if (hasBankAccount) completedSteps++;
+
+    verificationProgress = Math.round((completedSteps / totalSteps) * 100);
 
     // ⭐ REWARDS TIER - Using User.points
     let rewardsTier = null;

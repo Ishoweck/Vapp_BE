@@ -32,9 +32,17 @@ const errorHandler = (err, req, res, next) => {
     // Mongoose duplicate key error
     if (err.name === 'MongoServerError' && err.code === 11000) {
         const field = Object.keys(err.keyPattern)[0];
+        const fieldLabels = {
+            email: 'Email address',
+            phone: 'Phone number',
+            sku: 'SKU',
+            slug: 'Product name',
+            affiliateCode: 'Affiliate code',
+        };
+        const label = fieldLabels[field] || field;
         res.status(400).json({
             success: false,
-            message: 'Duplicate value error',
+            message: `${label} is already registered. Please use a different ${label.toLowerCase()} or sign in to your existing account.`,
             error: `${field} already exists`,
         });
         return;

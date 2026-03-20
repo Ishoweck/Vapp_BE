@@ -12,6 +12,7 @@ import { errorHandler, notFound } from './middleware/error';
 import { logger } from './utils/logger';
 import { initializeSocket } from './config/socket';
 import { setSocketInstance } from './services/notification.service';
+import { setupDailyBackup } from './utils/backup';
 
 // Load environment variables
 dotenv.config();
@@ -105,6 +106,9 @@ server.listen(PORT, () => {
   console.log(`Server started on http://localhost:${PORT}`);
   console.log(`API: http://localhost:${PORT}/api/${API_VERSION}`);
   console.log(`WebSocket: ws://localhost:${PORT}`);
+
+  // Start daily database backup scheduler
+  setupDailyBackup();
 });
 
 // SET SERVER TIMEOUT

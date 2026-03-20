@@ -52,6 +52,11 @@ class ProductController {
             const productData = req.body;
             // Set vendor from authenticated user
             productData.vendor = req.user?.id;
+            // Check if vendor's store is verified before allowing product creation
+            const vendorProfile = await VendorProfile_1.default.findOne({ user: req.user?.id });
+            if (!vendorProfile || vendorProfile.verificationStatus !== 'verified') {
+                throw new error_1.AppError('Your store must be verified before you can post products. Please complete your KYC verification.', 403);
+            }
             // Generate slug and SKU
             productData.slug = (0, helpers_1.generateSlug)(productData.name);
             if (!productData.sku) {

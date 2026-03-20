@@ -18,6 +18,7 @@ const error_1 = require("./middleware/error");
 const logger_1 = require("./utils/logger");
 const socket_1 = require("./config/socket");
 const notification_service_1 = require("./services/notification.service");
+const backup_1 = require("./utils/backup");
 // Load environment variables
 dotenv_1.default.config();
 // Create Express app
@@ -95,6 +96,8 @@ server.listen(PORT, () => {
     console.log(`Server started on http://localhost:${PORT}`);
     console.log(`API: http://localhost:${PORT}/api/${API_VERSION}`);
     console.log(`WebSocket: ws://localhost:${PORT}`);
+    // Start daily database backup scheduler
+    (0, backup_1.setupDailyBackup)();
 });
 // SET SERVER TIMEOUT
 server.timeout = 180000; // 3 minutes

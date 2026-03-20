@@ -241,6 +241,7 @@ async verifyEmail(req: AuthRequest, res: Response<ApiResponse>): Promise<void> {
     await user.save();
 
     // Send OTP email
+    console.log(`🔑 Resend OTP for ${email}: ${otpCode}`);
     await sendOTPEmail(email, otpCode);
 
     res.json({

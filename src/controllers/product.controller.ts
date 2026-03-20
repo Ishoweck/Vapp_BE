@@ -15,10 +15,19 @@ export class ProductController {
 async createProduct(req: AuthRequest, res: Response<ApiResponse>): Promise<void> {
   try {
     const productData = req.body;
-    
+
     // Set vendor from authenticated user
     productData.vendor = req.user?.id;
-    
+
+    // Check if vendor's store is verified before allowing product creation
+    const vendorProfile = await VendorProfile.findOne({ user: req.user?.id });
+    if (!vendorProfile || vendorProfile.verificationStatus !== 'verified') {
+      throw new AppError(
+        'Your store must be verified before you can post products. Please complete your KYC verification.',
+        403
+      );
+    }
+
     // Generate slug and SKU
     productData.slug = generateSlug(productData.name);
     if (!productData.sku) {

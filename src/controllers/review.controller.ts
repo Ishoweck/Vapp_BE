@@ -1,12 +1,16 @@
 import { Response } from 'express';
+import mongoose from 'mongoose';
 import { AuthRequest, ApiResponse } from '../types';
 import Review from '../models/Review';
 import Product from '../models/Product';
 import Order from '../models/Order';
 import User from '../models/User';
+import Wallet from '../models/Wallet';
 import { AppError } from '../middleware/error';
 import { notificationService } from '../services/notification.service';
 import { logger } from '../utils/logger';
+
+const VERIFIED_BUYER_THRESHOLD = 5000; // ₦5,000 minimum spend for verified buyer badge
 
 export class ReviewController {
   /**
@@ -38,6 +42,26 @@ export class ReviewController {
       throw new AppError('You have already reviewed this product', 400);
     }
 
+    // Check if user qualifies as a verified buyer (spent >= ₦5,000 on the platform)
+    let isVerifiedBuyer = false;
+    try {
+      const wallet = await Wallet.findOne({ user: req.user?.id });
+      if (wallet && wallet.totalSpent >= VERIFIED_BUYER_THRESHOLD) {
+        isVerifiedBuyer = true;
+      } else {
+        // Fallback: sum completed orders if wallet doesn't track totalSpent
+        const completedOrders = await Order.aggregate([
+          { $match: { user: new mongoose.Types.ObjectId(req.user?.id), paymentStatus: 'completed' } },
+          { $group: { _id: null, totalSpent: { $sum: '$total' } } },
+        ]);
+        if (completedOrders.length > 0 && completedOrders[0].totalSpent >= VERIFIED_BUYER_THRESHOLD) {
+          isVerifiedBuyer = true;
+        }
+      }
+    } catch (error) {
+      logger.error('Error checking verified buyer status:', error);
+    }
+
     // Create review
     const review = await Review.create({
       user: req.user?.id,
@@ -46,6 +70,7 @@ export class ReviewController {
       rating,
       comment,
       images: images || [],
+      verified: isVerifiedBuyer,
     });
 
     // Update product rating

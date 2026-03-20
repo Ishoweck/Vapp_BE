@@ -244,6 +244,7 @@ class AuthController {
         };
         await user.save();
         // Send OTP email
+        console.log(`🔑 Resend OTP for ${email}: ${otpCode}`);
         await (0, email_1.sendOTPEmail)(email, otpCode);
         res.json({
             success: true,

@@ -4,13 +4,16 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.reviewController = exports.ReviewController = void 0;
+const mongoose_1 = __importDefault(require("mongoose"));
 const Review_1 = __importDefault(require("../models/Review"));
 const Product_1 = __importDefault(require("../models/Product"));
 const Order_1 = __importDefault(require("../models/Order"));
 const User_1 = __importDefault(require("../models/User"));
+const Wallet_1 = __importDefault(require("../models/Wallet"));
 const error_1 = require("../middleware/error");
 const notification_service_1 = require("../services/notification.service");
 const logger_1 = require("../utils/logger");
+const VERIFIED_BUYER_THRESHOLD = 5000; // ₦5,000 minimum spend for verified buyer badge
 class ReviewController {
     /**
      * Create review
@@ -36,6 +39,27 @@ class ReviewController {
         if (existingReview) {
             throw new error_1.AppError('You have already reviewed this product', 400);
         }
+        // Check if user qualifies as a verified buyer (spent >= ₦5,000 on the platform)
+        let isVerifiedBuyer = false;
+        try {
+            const wallet = await Wallet_1.default.findOne({ user: req.user?.id });
+            if (wallet && wallet.totalSpent >= VERIFIED_BUYER_THRESHOLD) {
+                isVerifiedBuyer = true;
+            }
+            else {
+                // Fallback: sum completed orders if wallet doesn't track totalSpent
+                const completedOrders = await Order_1.default.aggregate([
+                    { $match: { user: new mongoose_1.default.Types.ObjectId(req.user?.id), paymentStatus: 'completed' } },
+                    { $group: { _id: null, totalSpent: { $sum: '$total' } } },
+                ]);
+                if (completedOrders.length > 0 && completedOrders[0].totalSpent >= VERIFIED_BUYER_THRESHOLD) {
+                    isVerifiedBuyer = true;
+                }
+            }
+        }
+        catch (error) {
+            logger_1.logger.error('Error checking verified buyer status:', error);
+        }
         // Create review
         const review = await Review_1.default.create({
             user: req.user?.id,
@@ -44,6 +68,7 @@ class ReviewController {
             rating,
             comment,
             images: images || [],
+            verified: isVerifiedBuyer,
         });
         // Update product rating
         await this.updateProductRating(productId);
