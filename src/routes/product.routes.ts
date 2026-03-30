@@ -62,6 +62,14 @@ router.get(
 // ============================================================
 router.get('/:id', asyncHandler(productController.getProduct.bind(productController)));
 
+// Generate product title or description with AI
+router.post(
+  '/generate-content',
+  authenticate,
+  authorize(UserRole.VENDOR, UserRole.ADMIN, UserRole.SUPER_ADMIN),
+  asyncHandler(productController.generateProductContent.bind(productController))
+);
+
 // Create product (vendors, admins, super admins only)
 router.post(
   '/',

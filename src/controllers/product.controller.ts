@@ -3,6 +3,7 @@ import { AuthRequest, ApiResponse, ProductStatus } from '../types';
 import Product from '../models/Product';
 import Category from '../models/Category';
 import VendorProfile from '../models/VendorProfile';
+import Groq from 'groq-sdk';
 import { AppError } from '../middleware/error';
 import { getPaginationMeta, generateSlug, generateSKU } from '../utils/helpers';
 import { uploadMultipleToCloudinary, uploadDigitalFileToCloudinary, uploadToCloudinary } from '../utils/cloudinary';
@@ -19,11 +20,11 @@ async createProduct(req: AuthRequest, res: Response<ApiResponse>): Promise<void>
     // Set vendor from authenticated user
     productData.vendor = req.user?.id;
 
-    // Check if vendor's store is verified before allowing product creation
+    // Check if vendor has a profile
     const vendorProfile = await VendorProfile.findOne({ user: req.user?.id });
-    if (!vendorProfile || vendorProfile.verificationStatus !== 'verified') {
+    if (!vendorProfile) {
       throw new AppError(
-        'Your store must be verified before you can post products. Please complete your KYC verification.',
+        'Please complete your store setup before posting products.',
         403
       );
     }
@@ -962,6 +963,65 @@ async getProducts(req: AuthRequest, res: Response<ApiResponse>): Promise<void> {
       createdAt: product.createdAt,
       updatedAt: product.updatedAt
     };
+  }
+
+  async generateProductContent(req: AuthRequest, res: Response<ApiResponse>): Promise<void> {
+    try {
+      const { type, category, keywords, currentTitle, currentDescription } = req.body;
+
+      if (!type || !['title', 'description'].includes(type)) {
+        throw new AppError('type must be "title" or "description"', 400);
+      }
+
+      const groq = new Groq({
+        apiKey: process.env.GROQ_API_KEY,
+      });
+
+      let prompt = '';
+
+      if (type === 'title') {
+        prompt = `Generate a catchy, SEO-friendly product title for an e-commerce listing on a Nigerian marketplace.
+${category ? `Category: ${category}` : ''}
+${keywords ? `Keywords/details: ${keywords}` : ''}
+${currentTitle ? `Current title to improve: ${currentTitle}` : ''}
+
+Return ONLY the product title, nothing else. Keep it under 80 characters. Make it compelling and descriptive.`;
+      } else {
+        prompt = `Write a detailed, compelling product description for an e-commerce listing on a Nigerian marketplace.
+${category ? `Category: ${category}` : ''}
+${currentTitle ? `Product name: ${currentTitle}` : ''}
+${keywords ? `Keywords/details: ${keywords}` : ''}
+${currentDescription ? `Current description to improve: ${currentDescription}` : ''}
+
+Write a professional product description that:
+- Highlights key features and benefits
+- Uses persuasive language
+- Is 100-300 words
+- Includes relevant details a buyer would want to know
+- Sounds natural, not robotic
+
+Return ONLY the description text, no headers or labels.`;
+      }
+
+      const completion = await groq.chat.completions.create({
+        model: 'llama-3.3-70b-versatile',
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: type === 'title' ? 100 : 500,
+        temperature: 0.7,
+      });
+
+      const generatedContent = completion.choices[0]?.message?.content?.trim() || '';
+
+      res.status(200).json({
+        success: true,
+        message: `Product ${type} generated successfully`,
+        data: { content: generatedContent },
+      });
+    } catch (error: any) {
+      if (error instanceof AppError) throw error;
+      console.error('AI generation error:', error);
+      throw new AppError('Failed to generate content. Please try again.', 500);
+    }
   }
 }
 

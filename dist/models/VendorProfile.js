@@ -144,6 +144,7 @@ const vendorProfileSchema = new mongoose_1.Schema({
         facebook: String,
         instagram: String,
         twitter: String,
+        tiktok: String,
     },
 }, {
     timestamps: true,

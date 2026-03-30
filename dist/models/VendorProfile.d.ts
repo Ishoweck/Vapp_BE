@@ -36,6 +36,7 @@ export interface IVendorProfile extends Document {
         facebook?: string;
         instagram?: string;
         twitter?: string;
+        tiktok?: string;
     };
 }
 declare const VendorProfile: mongoose.Model<IVendorProfile, {}, {}, {}, mongoose.Document<unknown, {}, IVendorProfile, {}, {}> & IVendorProfile & Required<{

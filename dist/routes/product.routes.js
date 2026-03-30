@@ -37,6 +37,8 @@ router.get('/my-products', auth_1.authenticate, (0, auth_1.authorize)(types_1.Us
 // Get single product - MUST BE AFTER /my-products
 // ============================================================
 router.get('/:id', (0, error_1.asyncHandler)(product_controller_1.productController.getProduct.bind(product_controller_1.productController)));
+// Generate product title or description with AI
+router.post('/generate-content', auth_1.authenticate, (0, auth_1.authorize)(types_1.UserRole.VENDOR, types_1.UserRole.ADMIN, types_1.UserRole.SUPER_ADMIN), (0, error_1.asyncHandler)(product_controller_1.productController.generateProductContent.bind(product_controller_1.productController)));
 // Create product (vendors, admins, super admins only)
 router.post('/', auth_1.authenticate, (0, auth_1.authorize)(types_1.UserRole.VENDOR, types_1.UserRole.ADMIN, types_1.UserRole.SUPER_ADMIN), (0, error_1.asyncHandler)(product_controller_1.productController.createProduct.bind(product_controller_1.productController)));
 // Toggle flash sale on a product (vendor only, must have >=10% discount)

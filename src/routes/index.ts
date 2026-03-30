@@ -24,6 +24,7 @@ import disputeRoutes from "./dispute.routes"
 import messageRoutes from './message.routes';
 import adminRoutes from './admin.routes';
 import auditRoutes from './audit.routes';
+import aiChatRoutes from './ai-chat.routes';
 
 
 const router = Router();
@@ -53,6 +54,7 @@ router.use('/disputes', disputeRoutes);
 router.use('/messages', messageRoutes);
 router.use('/admin', adminRoutes);
 router.use('/admin/audit-logs', auditRoutes);
+router.use('/ai-chat', aiChatRoutes);
 
 
 // Health check

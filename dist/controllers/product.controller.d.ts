@@ -29,6 +29,7 @@ export declare class ProductController {
     updateProduct(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
     deleteProduct(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
     private formatProduct;
+    generateProductContent(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
 }
 export declare const productController: ProductController;
 //# sourceMappingURL=product.controller.d.ts.map

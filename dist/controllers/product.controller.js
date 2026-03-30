@@ -41,6 +41,7 @@ const types_1 = require("../types");
 const Product_1 = __importDefault(require("../models/Product"));
 const Category_1 = __importDefault(require("../models/Category"));
 const VendorProfile_1 = __importDefault(require("../models/VendorProfile"));
+const groq_sdk_1 = __importDefault(require("groq-sdk"));
 const error_1 = require("../middleware/error");
 const helpers_1 = require("../utils/helpers");
 const cloudinary_1 = require("../utils/cloudinary");
@@ -52,10 +53,10 @@ class ProductController {
             const productData = req.body;
             // Set vendor from authenticated user
             productData.vendor = req.user?.id;
-            // Check if vendor's store is verified before allowing product creation
+            // Check if vendor has a profile
             const vendorProfile = await VendorProfile_1.default.findOne({ user: req.user?.id });
-            if (!vendorProfile || vendorProfile.verificationStatus !== 'verified') {
-                throw new error_1.AppError('Your store must be verified before you can post products. Please complete your KYC verification.', 403);
+            if (!vendorProfile) {
+                throw new error_1.AppError('Please complete your store setup before posting products.', 403);
             }
             // Generate slug and SKU
             productData.slug = (0, helpers_1.generateSlug)(productData.name);
@@ -852,6 +853,60 @@ class ProductController {
             createdAt: product.createdAt,
             updatedAt: product.updatedAt
         };
+    }
+    async generateProductContent(req, res) {
+        try {
+            const { type, category, keywords, currentTitle, currentDescription } = req.body;
+            if (!type || !['title', 'description'].includes(type)) {
+                throw new error_1.AppError('type must be "title" or "description"', 400);
+            }
+            const groq = new groq_sdk_1.default({
+                apiKey: process.env.GROQ_API_KEY,
+            });
+            let prompt = '';
+            if (type === 'title') {
+                prompt = `Generate a catchy, SEO-friendly product title for an e-commerce listing on a Nigerian marketplace.
+${category ? `Category: ${category}` : ''}
+${keywords ? `Keywords/details: ${keywords}` : ''}
+${currentTitle ? `Current title to improve: ${currentTitle}` : ''}
+
+Return ONLY the product title, nothing else. Keep it under 80 characters. Make it compelling and descriptive.`;
+            }
+            else {
+                prompt = `Write a detailed, compelling product description for an e-commerce listing on a Nigerian marketplace.
+${category ? `Category: ${category}` : ''}
+${currentTitle ? `Product name: ${currentTitle}` : ''}
+${keywords ? `Keywords/details: ${keywords}` : ''}
+${currentDescription ? `Current description to improve: ${currentDescription}` : ''}
+
+Write a professional product description that:
+- Highlights key features and benefits
+- Uses persuasive language
+- Is 100-300 words
+- Includes relevant details a buyer would want to know
+- Sounds natural, not robotic
+
+Return ONLY the description text, no headers or labels.`;
+            }
+            const completion = await groq.chat.completions.create({
+                model: 'llama-3.3-70b-versatile',
+                messages: [{ role: 'user', content: prompt }],
+                max_tokens: type === 'title' ? 100 : 500,
+                temperature: 0.7,
+            });
+            const generatedContent = completion.choices[0]?.message?.content?.trim() || '';
+            res.status(200).json({
+                success: true,
+                message: `Product ${type} generated successfully`,
+                data: { content: generatedContent },
+            });
+        }
+        catch (error) {
+            if (error instanceof error_1.AppError)
+                throw error;
+            console.error('AI generation error:', error);
+            throw new error_1.AppError('Failed to generate content. Please try again.', 500);
+        }
     }
 }
 exports.ProductController = ProductController;

@@ -38,6 +38,7 @@ export interface IVendorProfile extends Document {
     facebook?: string;
     instagram?: string;
     twitter?: string;
+    tiktok?: string;
   };
 }
 
@@ -151,6 +152,7 @@ const vendorProfileSchema = new Schema<IVendorProfile>({
     facebook: String,
     instagram: String,
     twitter: String,
+    tiktok: String,
   },
 }, {
   timestamps: true,
