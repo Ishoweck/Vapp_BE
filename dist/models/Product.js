@@ -188,6 +188,10 @@ const productSchema = new mongoose_1.Schema({
             },
             deviceInfo: mongoose_1.Schema.Types.Mixed,
         }],
+    colors: {
+        type: [String],
+        default: [],
+    },
     // NEW: Product details fields
     keyFeatures: {
         type: [String],

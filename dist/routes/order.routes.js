@@ -36,8 +36,12 @@ const createOrderValidation = [
         .withMessage('This endpoint only accepts wallet payments. Use /initialize-payment for card payments.'),
     (0, express_validator_1.body)('deliveryType')
         .optional()
-        .isIn(['standard', 'express', 'same_day', 'pickup', 'digital'])
-        .withMessage('Invalid delivery type'),
+        .custom((value) => {
+        const valid = ['standard', 'express', 'same_day', 'pickup', 'digital'];
+        if (valid.includes(value) || /^courier_.+$/.test(value))
+            return true;
+        throw new Error('Invalid delivery type');
+    }),
 ];
 // ✅ NEW: Validation for initialize-payment
 const initializePaymentValidation = [
@@ -47,17 +51,23 @@ const initializePaymentValidation = [
     (0, express_validator_1.body)('shippingAddress').optional().isObject(),
     (0, express_validator_1.body)('deliveryType')
         .optional()
-        .isIn(['standard', 'express', 'same_day', 'pickup', 'digital'])
-        .withMessage('Invalid delivery type'),
+        .custom((value) => {
+        const valid = ['standard', 'express', 'same_day', 'pickup', 'digital'];
+        if (valid.includes(value) || /^courier_.+$/.test(value))
+            return true;
+        throw new Error('Invalid delivery type');
+    }),
 ];
 // ✅ NEW: Validation for confirm-payment
 const confirmPaymentValidation = [
     (0, express_validator_1.body)('provider')
+        .optional()
         .isIn(['paystack', 'flutterwave'])
         .withMessage('Valid payment provider required'),
     (0, express_validator_1.body)('checkoutSnapshot')
+        .optional()
         .isObject()
-        .withMessage('Checkout snapshot is required'),
+        .withMessage('Checkout snapshot must be an object if provided'),
 ];
 const cancelOrderValidation = [
     (0, express_validator_1.body)('cancelReason').notEmpty().withMessage('Cancel reason is required'),

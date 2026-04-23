@@ -24,6 +24,7 @@ interface VerifyPaymentResponse {
     customer: {
       email: string;
     };
+    metadata?: any;
   };
 }
 

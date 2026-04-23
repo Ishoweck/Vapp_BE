@@ -179,7 +179,6 @@ const orderSchema = new mongoose_1.Schema({
     notes: String,
     deliveryType: {
         type: String,
-        enum: ['standard', 'express', 'same_day', 'pickup', 'digital'], // ✅ ADDED 'digital'
         default: 'standard',
     },
     isPickup: {

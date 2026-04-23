@@ -214,7 +214,6 @@ const orderSchema = new Schema<IOrder>({
   
   deliveryType: {
     type: String,
-    enum: ['standard', 'express', 'same_day', 'pickup', 'digital'], // ✅ ADDED 'digital'
     default: 'standard',
   },
   isPickup: {

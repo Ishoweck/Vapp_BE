@@ -7,7 +7,10 @@
       "Bash(do:*)",
       "Bash(ls:*)",
       "Bash(npx next:*)",
-      "Bash(npx ts-node:*)"
+      "Bash(npx ts-node:*)",
+      "Bash(npx create-next-app@latest vendorspot-website --typescript --tailwind --eslint --app --src-dir --no-import-alias --use-npm)",
+      "Bash(npm ls:*)",
+      "Bash(npm run:*)"
     ]
   }
 }

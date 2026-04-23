@@ -263,6 +263,9 @@
           },
         });
       } catch (error: any) {
+        if (error instanceof AppError) {
+          throw error;
+        }
         logger.error('❌ Critical error in getDeliveryRates:', error);
         throw new AppError('Failed to get delivery rates', 500);
       }
@@ -1190,6 +1193,7 @@
 
       // Step 1: Verify payment with the gateway
       let paymentSuccess = false;
+      let snapshotFromGateway: any = null;
       const paymentProvider = provider || 'paystack';
 
       try {
@@ -1211,6 +1215,17 @@
           if (verification.data.status === 'success') {
             paymentSuccess = true;
             logger.info('✅ Paystack payment verified:', { amount: verification.data.amount });
+            // Extract snapshot stored in Paystack metadata during initializePayment
+            const meta = verification.data.metadata;
+            if (meta?.checkoutSnapshot) {
+              try {
+                snapshotFromGateway = typeof meta.checkoutSnapshot === 'string'
+                  ? JSON.parse(meta.checkoutSnapshot)
+                  : meta.checkoutSnapshot;
+              } catch {
+                logger.warn('⚠️ Could not parse checkoutSnapshot from Paystack metadata');
+              }
+            }
           }
         }
       } catch (error: any) {
@@ -1222,8 +1237,8 @@
         throw new AppError('Payment was not successful', 400);
       }
 
-      // Step 2: Parse the checkout snapshot
-      const snapshot = snapshotFromClient;
+      // Step 2: Parse the checkout snapshot (client-provided takes priority, else use gateway metadata)
+      const snapshot = snapshotFromClient || snapshotFromGateway;
       if (!snapshot || snapshot.userId !== req.user?.id) {
         throw new AppError('Invalid checkout data', 400);
       }
@@ -1965,10 +1980,15 @@
      * Get single order
      */
     async getOrder(req: AuthRequest, res: Response<ApiResponse>): Promise<void> {
-      const order = await Order.findOne({
-        _id: req.params.id,
-        user: req.user?.id,
-      })
+      const { id } = req.params;
+      const mongoose = await import('mongoose');
+
+      // Support lookup by either MongoDB _id or orderNumber
+      const query = mongoose.default.isValidObjectId(id)
+        ? { $or: [{ _id: id }, { orderNumber: id }], user: req.user?.id }
+        : { orderNumber: id, user: req.user?.id };
+
+      const order = await Order.findOne(query)
         .populate('items.product', 'name images slug productType digitalFile')
         .populate('items.vendor', 'firstName lastName email')
         .populate('vendorShipments.vendor', 'firstName lastName');

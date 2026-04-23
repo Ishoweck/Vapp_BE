@@ -51,6 +51,7 @@ export interface IProduct extends Document {
     isActive: boolean;
     deviceInfo?: any;
   }>;
+  colors?: string[];
   // NEW: Product details fields
   keyFeatures?: string[];
   specifications?: {
@@ -222,6 +223,10 @@ const productSchema = new Schema<IProduct>({
     },
     deviceInfo: Schema.Types.Mixed,
   }],
+  colors: {
+    type: [String],
+    default: [],
+  },
   // NEW: Product details fields
   keyFeatures: {
     type: [String],

@@ -17,6 +17,7 @@ interface VerifyPaymentResponse {
         customer: {
             email: string;
         };
+        metadata?: any;
     };
 }
 export declare class PaystackService {

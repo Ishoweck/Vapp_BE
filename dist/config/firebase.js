@@ -1,83 +1,65 @@
 "use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.sendPushNotification = exports.isFirebaseInitialized = void 0;
-const firebase_admin_1 = __importDefault(require("firebase-admin"));
+exports.isFirebaseInitialized = exports.sendPushNotification = void 0;
 const logger_1 = require("../utils/logger");
-let firebaseInitialized = false;
-const initializeFirebase = () => {
-    if (firebaseInitialized)
-        return;
-    try {
-        const projectId = process.env.FIREBASE_PROJECT_ID;
-        const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
-        const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-        if (!projectId || !privateKey || !clientEmail) {
-            logger_1.logger.warn('Firebase credentials not configured — push notifications disabled');
-            return;
-        }
-        firebase_admin_1.default.initializeApp({
-            credential: firebase_admin_1.default.credential.cert({
-                projectId,
-                privateKey,
-                clientEmail,
-            }),
-        });
-        firebaseInitialized = true;
-        logger_1.logger.info('Firebase Admin SDK initialized');
-    }
-    catch (error) {
-        logger_1.logger.error('Firebase initialization error:', error.message);
-    }
-};
-initializeFirebase();
-const isFirebaseInitialized = () => firebaseInitialized;
-exports.isFirebaseInitialized = isFirebaseInitialized;
+/**
+ * Send push notifications via Expo Push Notification Service.
+ * Tokens are Expo push tokens (format: ExponentPushToken[xxx]).
+ */
 const sendPushNotification = async (tokens, title, body, data) => {
-    if (!firebaseInitialized || tokens.length === 0)
+    if (tokens.length === 0)
         return;
-    try {
-        const message = {
-            tokens,
-            notification: {
-                title,
-                body,
-            },
-            data: data || {},
-            android: {
-                priority: 'high',
-                notification: {
-                    sound: 'default',
-                    channelId: 'vendorspot_notifications',
-                },
-            },
-            apns: {
-                payload: {
-                    aps: {
-                        sound: 'default',
-                        badge: 1,
-                    },
-                },
-            },
-        };
-        const response = await firebase_admin_1.default.messaging().sendEachForMulticast(message);
-        if (response.failureCount > 0) {
-            const failedTokens = [];
-            response.responses.forEach((resp, idx) => {
-                if (!resp.success) {
-                    failedTokens.push(tokens[idx]);
-                }
-            });
-            logger_1.logger.warn(`Push notification failed for ${failedTokens.length} token(s)`);
-        }
-        logger_1.logger.info(`Push sent: ${response.successCount}/${tokens.length} succeeded`);
+    // Filter to only valid Expo push tokens
+    const validTokens = tokens.filter((token) => typeof token === 'string' && token.startsWith('ExponentPushToken'));
+    if (validTokens.length === 0) {
+        logger_1.logger.warn('No valid Expo push tokens to send to');
+        return;
     }
-    catch (error) {
-        logger_1.logger.error('Push notification error:', error.message);
+    // Build messages for Expo push API (max 100 per request)
+    const messages = validTokens.map((token) => ({
+        to: token,
+        sound: 'default',
+        title,
+        body,
+        data: data || {},
+        priority: 'high',
+        channelId: 'default',
+    }));
+    // Send in chunks of 100 (Expo's limit)
+    const chunks = [];
+    for (let i = 0; i < messages.length; i += 100) {
+        chunks.push(messages.slice(i, i + 100));
+    }
+    for (const chunk of chunks) {
+        try {
+            const response = await fetch('https://exp.host/--/api/v2/push/send', {
+                method: 'POST',
+                headers: {
+                    'Accept': 'application/json',
+                    'Accept-encoding': 'gzip, deflate',
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(chunk),
+            });
+            const result = await response.json();
+            if (result.errors) {
+                logger_1.logger.warn('Expo push errors:', JSON.stringify(result.errors));
+            }
+            const successCount = result.data?.filter((r) => r.status === 'ok').length ?? 0;
+            const failCount = (result.data?.length ?? 0) - successCount;
+            if (failCount > 0) {
+                logger_1.logger.warn(`Push notification failed for ${failCount} token(s)`);
+            }
+            logger_1.logger.info(`Push sent: ${successCount}/${chunk.length} succeeded`);
+        }
+        catch (error) {
+            logger_1.logger.error('Push notification error:', error.message);
+        }
     }
 };
 exports.sendPushNotification = sendPushNotification;
-exports.default = firebase_admin_1.default;
+// Keep backward compatibility - no longer needed but some imports may reference it
+const isFirebaseInitialized = () => true;
+exports.isFirebaseInitialized = isFirebaseInitialized;
+exports.default = {};
 //# sourceMappingURL=firebase.js.map

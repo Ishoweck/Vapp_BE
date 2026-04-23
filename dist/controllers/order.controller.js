@@ -260,6 +260,9 @@ class OrderController {
             });
         }
         catch (error) {
+            if (error instanceof error_1.AppError) {
+                throw error;
+            }
             logger_1.logger.error('❌ Critical error in getDeliveryRates:', error);
             throw new error_1.AppError('Failed to get delivery rates', 500);
         }
@@ -1010,6 +1013,7 @@ class OrderController {
         logger_1.logger.info('🔍 Provider:', provider || 'paystack');
         // Step 1: Verify payment with the gateway
         let paymentSuccess = false;
+        let snapshotFromGateway = null;
         const paymentProvider = provider || 'paystack';
         try {
             if (paymentProvider === 'flutterwave') {
@@ -1032,6 +1036,18 @@ class OrderController {
                 if (verification.data.status === 'success') {
                     paymentSuccess = true;
                     logger_1.logger.info('✅ Paystack payment verified:', { amount: verification.data.amount });
+                    // Extract snapshot stored in Paystack metadata during initializePayment
+                    const meta = verification.data.metadata;
+                    if (meta?.checkoutSnapshot) {
+                        try {
+                            snapshotFromGateway = typeof meta.checkoutSnapshot === 'string'
+                                ? JSON.parse(meta.checkoutSnapshot)
+                                : meta.checkoutSnapshot;
+                        }
+                        catch {
+                            logger_1.logger.warn('⚠️ Could not parse checkoutSnapshot from Paystack metadata');
+                        }
+                    }
                 }
             }
         }
@@ -1042,8 +1058,8 @@ class OrderController {
         if (!paymentSuccess) {
             throw new error_1.AppError('Payment was not successful', 400);
         }
-        // Step 2: Parse the checkout snapshot
-        const snapshot = snapshotFromClient;
+        // Step 2: Parse the checkout snapshot (client-provided takes priority, else use gateway metadata)
+        const snapshot = snapshotFromClient || snapshotFromGateway;
         if (!snapshot || snapshot.userId !== req.user?.id) {
             throw new error_1.AppError('Invalid checkout data', 400);
         }
@@ -1672,10 +1688,13 @@ class OrderController {
      * Get single order
      */
     async getOrder(req, res) {
-        const order = await Order_1.default.findOne({
-            _id: req.params.id,
-            user: req.user?.id,
-        })
+        const { id } = req.params;
+        const mongoose = await Promise.resolve().then(() => __importStar(require('mongoose')));
+        // Support lookup by either MongoDB _id or orderNumber
+        const query = mongoose.default.isValidObjectId(id)
+            ? { $or: [{ _id: id }, { orderNumber: id }], user: req.user?.id }
+            : { orderNumber: id, user: req.user?.id };
+        const order = await Order_1.default.findOne(query)
             .populate('items.product', 'name images slug productType digitalFile')
             .populate('items.vendor', 'firstName lastName email')
             .populate('vendorShipments.vendor', 'firstName lastName');

@@ -50,6 +50,7 @@ export interface IProduct extends Document {
         isActive: boolean;
         deviceInfo?: any;
     }>;
+    colors?: string[];
     keyFeatures?: string[];
     specifications?: {
         [key: string]: string;
