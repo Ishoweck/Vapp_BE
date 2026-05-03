@@ -62,6 +62,11 @@ export declare class OrderController {
      */
     verifyPayment(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
     /**
+     * Check if the current user has an active order involving a counterparty.
+     * Customers check by vendor (items.vendor), vendors check by buyer (user).
+     */
+    checkActiveOrderWith(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
+    /**
      * Get user orders
      */
     getUserOrders(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;

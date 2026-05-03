@@ -757,6 +757,16 @@ class ProductController {
             throw new error_1.AppError('Not authorized', 403);
         }
         const oldPrice = product.price;
+        // Upload any new base64 images to Cloudinary before saving
+        if (req.body.images && Array.isArray(req.body.images) && req.body.images.length > 0) {
+            req.body.images = await Promise.all(req.body.images.map(async (img) => {
+                if (typeof img === 'string' && img.startsWith('data:')) {
+                    const result = await (0, cloudinary_1.uploadToCloudinary)(img, 'products');
+                    return result.url;
+                }
+                return img;
+            }));
+        }
         Object.assign(product, req.body);
         await product.save();
         // Notify wishlisted users about price drop
@@ -845,6 +855,9 @@ class ProductController {
             totalSales: product.totalSales || 0,
             views: product.views || 0,
             weight: product.weight,
+            sku: product.sku || '',
+            isFlashSale: product.isFlashSale || false,
+            colors: product.colors || [],
             // NEW: Product details
             keyFeatures: product.keyFeatures || [],
             specifications: specifications,

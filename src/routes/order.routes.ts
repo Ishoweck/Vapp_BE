@@ -106,6 +106,9 @@ router.get(
 // Get user's digital products
 router.get('/my-digital-products', asyncHandler(orderController.getUserDigitalProducts.bind(orderController)));
 
+// Check active order with a counterparty (used by chat lock)
+router.get('/check-active-with/:counterpartyId', asyncHandler(orderController.checkActiveOrderWith.bind(orderController)));
+
 // Customer orders
 router.get('/my-orders', asyncHandler(orderController.getUserOrders.bind(orderController)));
 

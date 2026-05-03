@@ -851,6 +851,19 @@ async getProducts(req: AuthRequest, res: Response<ApiResponse>): Promise<void> {
 
     const oldPrice = product.price;
 
+    // Upload any new base64 images to Cloudinary before saving
+    if (req.body.images && Array.isArray(req.body.images) && req.body.images.length > 0) {
+      req.body.images = await Promise.all(
+        req.body.images.map(async (img: string) => {
+          if (typeof img === 'string' && img.startsWith('data:')) {
+            const result = await uploadToCloudinary(img, 'products');
+            return result.url;
+          }
+          return img;
+        })
+      );
+    }
+
     Object.assign(product, req.body);
     await product.save();
 
@@ -955,6 +968,9 @@ async getProducts(req: AuthRequest, res: Response<ApiResponse>): Promise<void> {
       totalSales: product.totalSales || 0,
       views: product.views || 0,
       weight: product.weight,
+      sku: product.sku || '',
+      isFlashSale: product.isFlashSale || false,
+      colors: product.colors || [],
       // NEW: Product details
       keyFeatures: product.keyFeatures || [],
       specifications: specifications,

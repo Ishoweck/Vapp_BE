@@ -20,11 +20,12 @@ export class VendorController {
    * Get top vendors (Public - for home screen)
    */
   async getTopVendors(req: AuthRequest, res: Response<ApiResponse>): Promise<void> {
-    const limit = parseInt(req.query.limit as string) || 10;
+    const q = (req.query.q as string || '').trim();
+    const limit = parseInt(req.query.limit as string) || (q ? 50 : 10);
     const sortBy = (req.query.sortBy as string) || 'rating';
 
     let sortCriteria: any = {};
-    
+
     switch (sortBy) {
       case 'sales':
         sortCriteria = { totalSales: -1 };
@@ -37,10 +38,17 @@ export class VendorController {
         sortCriteria = { averageRating: -1, totalReviews: -1 };
     }
 
-    const vendors = await VendorProfile.find({
-      isActive: true,
-      verificationStatus: VendorVerificationStatus.VERIFIED,
-    })
+    const baseFilter: any = { isActive: true };
+    if (q) {
+      baseFilter.$or = [
+        { businessName: { $regex: q, $options: 'i' } },
+        { businessDescription: { $regex: q, $options: 'i' } },
+      ];
+    } else {
+      baseFilter.verificationStatus = VendorVerificationStatus.VERIFIED;
+    }
+
+    const vendors = await VendorProfile.find(baseFilter)
       .populate('user', 'firstName lastName')
       .sort(sortCriteria)
       .limit(limit)

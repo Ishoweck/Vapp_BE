@@ -1,6 +1,7 @@
   // controllers/order.controller.ts
   // ✅ FIXED: Added category detection, fixed default weight, pass categoryId to ShipBubble
   import { Response } from 'express';
+  import mongoose from 'mongoose';
   import { AuthRequest, ApiResponse, OrderStatus, PaymentStatus, PaymentMethod, TransactionType, WalletPurpose } from '../types';
   import { VendorGroup, VendorDeliveryRate, DeliveryRateResponse } from '../types/shipping.types';
   import Order from '../models/Order';
@@ -1944,6 +1945,33 @@
     }
 
     /**
+     * Check if the current user has an active order involving a counterparty.
+     * Customers check by vendor (items.vendor), vendors check by buyer (user).
+     */
+    async checkActiveOrderWith(req: AuthRequest, res: Response<ApiResponse>): Promise<void> {
+      const { counterpartyId } = req.params;
+      const ACTIVE_STATUSES = ['pending', 'confirmed', 'processing', 'shipped'];
+
+      let hasActiveOrder = false;
+
+      if (req.user?.role === 'vendor') {
+        hasActiveOrder = !!(await Order.findOne({
+          'items.vendor': req.user.id,
+          user: counterpartyId,
+          status: { $in: ACTIVE_STATUSES },
+        }).select('_id').lean());
+      } else {
+        hasActiveOrder = !!(await Order.findOne({
+          user: req.user?.id,
+          'items.vendor': counterpartyId,
+          status: { $in: ACTIVE_STATUSES },
+        }).select('_id').lean());
+      }
+
+      res.json({ success: true, data: { hasActiveOrder } });
+    }
+
+    /**
      * Get user orders
      */
     async getUserOrders(req: AuthRequest, res: Response<ApiResponse>): Promise<void> {
@@ -1981,10 +2009,9 @@
      */
     async getOrder(req: AuthRequest, res: Response<ApiResponse>): Promise<void> {
       const { id } = req.params;
-      const mongoose = await import('mongoose');
 
-      // Support lookup by either MongoDB _id or orderNumber
-      const query = mongoose.default.isValidObjectId(id)
+      // Support lookup by either MongoDB _id or orderNumber (payment reference)
+      const query = mongoose.isValidObjectId(id)
         ? { $or: [{ _id: id }, { orderNumber: id }], user: req.user?.id }
         : { orderNumber: id, user: req.user?.id };
 

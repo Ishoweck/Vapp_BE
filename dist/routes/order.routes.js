@@ -90,6 +90,8 @@ router.get('/delivery-rates', (0, validation_1.validate)(getDeliveryRatesValidat
 router.get('/payment/verify/:reference', (0, error_1.asyncHandler)(order_controller_1.orderController.verifyPayment.bind(order_controller_1.orderController)));
 // Get user's digital products
 router.get('/my-digital-products', (0, error_1.asyncHandler)(order_controller_1.orderController.getUserDigitalProducts.bind(order_controller_1.orderController)));
+// Check active order with a counterparty (used by chat lock)
+router.get('/check-active-with/:counterpartyId', (0, error_1.asyncHandler)(order_controller_1.orderController.checkActiveOrderWith.bind(order_controller_1.orderController)));
 // Customer orders
 router.get('/my-orders', (0, error_1.asyncHandler)(order_controller_1.orderController.getUserOrders.bind(order_controller_1.orderController)));
 // Vendor get single order - BEFORE generic :id

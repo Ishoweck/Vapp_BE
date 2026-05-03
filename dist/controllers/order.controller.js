@@ -37,6 +37,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.orderController = exports.OrderController = void 0;
+const mongoose_1 = __importDefault(require("mongoose"));
 const types_1 = require("../types");
 const Order_1 = __importDefault(require("../models/Order"));
 const Cart_1 = __importDefault(require("../models/Cart"));
@@ -1657,6 +1658,30 @@ class OrderController {
         }
     }
     /**
+     * Check if the current user has an active order involving a counterparty.
+     * Customers check by vendor (items.vendor), vendors check by buyer (user).
+     */
+    async checkActiveOrderWith(req, res) {
+        const { counterpartyId } = req.params;
+        const ACTIVE_STATUSES = ['pending', 'confirmed', 'processing', 'shipped'];
+        let hasActiveOrder = false;
+        if (req.user?.role === 'vendor') {
+            hasActiveOrder = !!(await Order_1.default.findOne({
+                'items.vendor': req.user.id,
+                user: counterpartyId,
+                status: { $in: ACTIVE_STATUSES },
+            }).select('_id').lean());
+        }
+        else {
+            hasActiveOrder = !!(await Order_1.default.findOne({
+                user: req.user?.id,
+                'items.vendor': counterpartyId,
+                status: { $in: ACTIVE_STATUSES },
+            }).select('_id').lean());
+        }
+        res.json({ success: true, data: { hasActiveOrder } });
+    }
+    /**
      * Get user orders
      */
     async getUserOrders(req, res) {
@@ -1689,9 +1714,8 @@ class OrderController {
      */
     async getOrder(req, res) {
         const { id } = req.params;
-        const mongoose = await Promise.resolve().then(() => __importStar(require('mongoose')));
-        // Support lookup by either MongoDB _id or orderNumber
-        const query = mongoose.default.isValidObjectId(id)
+        // Support lookup by either MongoDB _id or orderNumber (payment reference)
+        const query = mongoose_1.default.isValidObjectId(id)
             ? { $or: [{ _id: id }, { orderNumber: id }], user: req.user?.id }
             : { orderNumber: id, user: req.user?.id };
         const order = await Order_1.default.findOne(query)

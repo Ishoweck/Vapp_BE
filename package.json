@@ -18,7 +18,9 @@
     "ship:final": "npx ts-node src/scripts/test-shipbubble-correct-spelling.ts",
     "fix-products": "npx ts-node src/scripts/fix-product-types.ts",
     "fix-add": "npx ts-node src/scripts/fix-vendor-addresses-quick.ts",
-    "download-content": "ts-node src/scripts/download-real-content.ts"
+    "download-content": "ts-node src/scripts/download-real-content.ts",
+    "migrate": "npx ts-node src/scripts/migrate-from-old-db.ts",
+    "patch:pending": "npx ts-node src/scripts/patch-migrated-to-pending.ts"
   },
   "keywords": [
     "ecommerce",

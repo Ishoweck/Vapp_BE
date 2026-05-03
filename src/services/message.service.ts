@@ -87,7 +87,7 @@ class MessageService {
         type: NotificationType.CHAT,
         title: `New message from ${senderName}`,
         message: notifMessage,
-        data: { conversationId, senderId, messageId: chatMessage._id?.toString() },
+        data: { conversationId, senderId, senderName, messageId: chatMessage._id?.toString() },
         link: `/messages/${conversationId}`,
       });
     } catch (error: any) {
