@@ -225,7 +225,13 @@ async getProducts(req: AuthRequest, res: Response<ApiResponse>): Promise<void> {
   }
 
   async getProduct(req: AuthRequest, res: Response<ApiResponse>): Promise<void> {
-    const product = await Product.findById(req.params.id)
+    const { id } = req.params;
+    const isObjectId = /^[a-f\d]{24}$/i.test(id);
+
+    const product = await (isObjectId
+      ? Product.findById(id)
+      : Product.findOne({ slug: id })
+    )
       .populate('vendor', 'firstName lastName email profileImage')
       .populate('category', 'name');
 

@@ -219,7 +219,11 @@ class ProductController {
         });
     }
     async getProduct(req, res) {
-        const product = await Product_1.default.findById(req.params.id)
+        const { id } = req.params;
+        const isObjectId = /^[a-f\d]{24}$/i.test(id);
+        const product = await (isObjectId
+            ? Product_1.default.findById(id)
+            : Product_1.default.findOne({ slug: id }))
             .populate('vendor', 'firstName lastName email profileImage')
             .populate('category', 'name');
         if (!product) {
