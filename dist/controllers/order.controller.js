@@ -658,9 +658,10 @@ class OrderController {
         // Resolve affiliate if a code was passed at checkout
         let walletAffiliateUserId = undefined;
         let walletAffiliateCommission = 0;
-        if (affiliateCode) {
+        const normalizedWalletAffiliateCode = affiliateCode ? affiliateCode.toUpperCase() : undefined;
+        if (normalizedWalletAffiliateCode) {
             try {
-                const linkRecord = await Additional_1.AffiliateLink.findOne({ code: affiliateCode, isActive: true });
+                const linkRecord = await Additional_1.AffiliateLink.findOne({ code: normalizedWalletAffiliateCode, isActive: true });
                 if (linkRecord && linkRecord.user.toString() !== req.user?.id) {
                     let commissionSum = 0;
                     if (linkRecord.product) {
@@ -685,7 +686,7 @@ class OrderController {
                     }
                     walletAffiliateUserId = linkRecord.user;
                     walletAffiliateCommission = Math.round(commissionSum * 100) / 100;
-                    logger_1.logger.info(`🤝 Affiliate code ${affiliateCode} resolved — commission: ₦${walletAffiliateCommission}`);
+                    logger_1.logger.info(`🤝 Affiliate code ${normalizedWalletAffiliateCode} resolved — commission: ₦${walletAffiliateCommission}`);
                 }
             }
             catch (affiliateErr) {
@@ -771,7 +772,7 @@ class OrderController {
                         timestamp: new Date(),
                     });
                     await affiliateWallet.save();
-                    await Additional_1.AffiliateLink.findOneAndUpdate({ code: affiliateCode }, { $inc: { conversions: 1, totalEarned: walletAffiliateCommission } });
+                    await Additional_1.AffiliateLink.findOneAndUpdate({ code: normalizedWalletAffiliateCode }, { $inc: { conversions: 1, totalEarned: walletAffiliateCommission } });
                     logger_1.logger.info(`✅ Credited ₦${walletAffiliateCommission} affiliate commission for wallet order ${orderNumber}`);
                 }
                 catch (affiliateErr) {
@@ -1281,7 +1282,9 @@ class OrderController {
         // Resolve affiliate if a code was passed at checkout
         let affiliateUserId = undefined;
         let affiliateCommissionAmount = 0;
-        const snapshotAffiliateCode = snapshot.affiliateCode;
+        const snapshotAffiliateCode = snapshot.affiliateCode
+            ? snapshot.affiliateCode.toUpperCase()
+            : undefined;
         if (snapshotAffiliateCode) {
             try {
                 const linkRecord = await Additional_1.AffiliateLink.findOne({ code: snapshotAffiliateCode, isActive: true });

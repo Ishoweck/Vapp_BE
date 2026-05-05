@@ -776,9 +776,10 @@
       // Resolve affiliate if a code was passed at checkout
       let walletAffiliateUserId: any = undefined;
       let walletAffiliateCommission = 0;
-      if (affiliateCode) {
+      const normalizedWalletAffiliateCode = affiliateCode ? (affiliateCode as string).toUpperCase() : undefined;
+      if (normalizedWalletAffiliateCode) {
         try {
-          const linkRecord = await AffiliateLink.findOne({ code: affiliateCode, isActive: true });
+          const linkRecord = await AffiliateLink.findOne({ code: normalizedWalletAffiliateCode, isActive: true });
           if (linkRecord && linkRecord.user.toString() !== req.user?.id) {
             let commissionSum = 0;
             if (linkRecord.product) {
@@ -802,7 +803,7 @@
             }
             walletAffiliateUserId = linkRecord.user;
             walletAffiliateCommission = Math.round(commissionSum * 100) / 100;
-            logger.info(`🤝 Affiliate code ${affiliateCode} resolved — commission: ₦${walletAffiliateCommission}`);
+            logger.info(`🤝 Affiliate code ${normalizedWalletAffiliateCode} resolved — commission: ₦${walletAffiliateCommission}`);
           }
         } catch (affiliateErr) {
           logger.error('Error resolving affiliate:', affiliateErr);
@@ -898,7 +899,7 @@
             } as any);
             await affiliateWallet.save();
             await AffiliateLink.findOneAndUpdate(
-              { code: affiliateCode },
+              { code: normalizedWalletAffiliateCode },
               { $inc: { conversions: 1, totalEarned: walletAffiliateCommission } }
             );
             logger.info(`✅ Credited ₦${walletAffiliateCommission} affiliate commission for wallet order ${orderNumber}`);
@@ -1485,7 +1486,9 @@
       // Resolve affiliate if a code was passed at checkout
       let affiliateUserId: any = undefined;
       let affiliateCommissionAmount = 0;
-      const snapshotAffiliateCode = snapshot.affiliateCode;
+      const snapshotAffiliateCode = snapshot.affiliateCode
+        ? (snapshot.affiliateCode as string).toUpperCase()
+        : undefined;
       if (snapshotAffiliateCode) {
         try {
           const linkRecord = await AffiliateLink.findOne({ code: snapshotAffiliateCode, isActive: true });

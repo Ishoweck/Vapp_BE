@@ -8,7 +8,9 @@ const express_validator_1 = require("express-validator");
 const validation_1 = require("../middleware/validation");
 const types_1 = require("../types");
 const router = (0, express_1.Router)();
-// All affiliate routes require authentication
+// Public route — must be registered BEFORE router.use(authenticate)
+router.get('/track/:code', (0, error_1.asyncHandler)(affiliate_controller_1.affiliateController.trackClick.bind(affiliate_controller_1.affiliateController)));
+// All remaining affiliate routes require authentication
 router.use(auth_1.authenticate);
 const generateLinkValidation = [
     (0, express_validator_1.body)('productId').notEmpty().withMessage('Product ID is required'),
@@ -23,8 +25,6 @@ router.get('/dashboard', (0, error_1.asyncHandler)(affiliate_controller_1.affili
 router.get('/earnings', (0, error_1.asyncHandler)(affiliate_controller_1.affiliateController.getAffiliateEarnings.bind(affiliate_controller_1.affiliateController)));
 // Leaderboard
 router.get('/leaderboard', (0, error_1.asyncHandler)(affiliate_controller_1.affiliateController.getAffiliateLeaderboard.bind(affiliate_controller_1.affiliateController)));
-// Track click (can be called without full auth in production)
-router.get('/track/:code', (0, error_1.asyncHandler)(affiliate_controller_1.affiliateController.trackClick.bind(affiliate_controller_1.affiliateController)));
 // Admin routes
 router.get('/admin/all', (0, auth_1.authorize)(types_1.UserRole.ADMIN, types_1.UserRole.SUPER_ADMIN), (0, error_1.asyncHandler)(affiliate_controller_1.affiliateController.getAllAffiliates.bind(affiliate_controller_1.affiliateController)));
 exports.default = router;

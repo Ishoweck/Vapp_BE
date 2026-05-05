@@ -8,7 +8,13 @@ import { UserRole } from '../types';
 
 const router = Router();
 
-// All affiliate routes require authentication
+// Public route — must be registered BEFORE router.use(authenticate)
+router.get(
+  '/track/:code',
+  asyncHandler(affiliateController.trackClick.bind(affiliateController))
+);
+
+// All remaining affiliate routes require authentication
 router.use(authenticate);
 
 const generateLinkValidation = [
@@ -48,12 +54,6 @@ router.get(
 router.get(
   '/leaderboard',
   asyncHandler(affiliateController.getAffiliateLeaderboard.bind(affiliateController))
-);
-
-// Track click (can be called without full auth in production)
-router.get(
-  '/track/:code',
-  asyncHandler(affiliateController.trackClick.bind(affiliateController))
 );
 
 // Admin routes
