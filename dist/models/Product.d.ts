@@ -51,6 +51,7 @@ export interface IProduct extends Document {
         deviceInfo?: any;
     }>;
     colors?: string[];
+    sizes?: string[];
     keyFeatures?: string[];
     specifications?: {
         [key: string]: string;

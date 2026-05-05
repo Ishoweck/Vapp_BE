@@ -971,6 +971,8 @@ async getProducts(req: AuthRequest, res: Response<ApiResponse>): Promise<void> {
       sku: product.sku || '',
       isFlashSale: product.isFlashSale || false,
       colors: product.colors || [],
+      sizes: product.sizes || [],
+      status: product.status || 'pending_approval',
       // NEW: Product details
       keyFeatures: product.keyFeatures || [],
       specifications: specifications,

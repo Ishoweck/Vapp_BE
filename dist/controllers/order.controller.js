@@ -492,7 +492,7 @@ class OrderController {
      * For Paystack/Flutterwave, use initializePayment → confirmPayment flow instead
      */
     async createOrder(req, res) {
-        const { shippingAddress, paymentMethod, notes, deliveryType = 'standard', selectedDeliveryPrice, selectedCourier, vendorBreakdown, } = req.body;
+        const { shippingAddress, paymentMethod, notes, deliveryType = 'standard', selectedDeliveryPrice, selectedCourier, vendorBreakdown, affiliateCode, } = req.body;
         logger_1.logger.info('🛒 ============================================');
         logger_1.logger.info('🛒 CREATE ORDER STARTED');
         logger_1.logger.info('🛒 ============================================');
@@ -655,6 +655,43 @@ class OrderController {
         const total = subtotal - discount + totalShippingCost + tax;
         const orderNumber = (0, helpers_1.generateOrderNumber)();
         logger_1.logger.info('💾 Creating order document...', { orderNumber });
+        // Resolve affiliate if a code was passed at checkout
+        let walletAffiliateUserId = undefined;
+        let walletAffiliateCommission = 0;
+        if (affiliateCode) {
+            try {
+                const linkRecord = await Additional_1.AffiliateLink.findOne({ code: affiliateCode, isActive: true });
+                if (linkRecord && linkRecord.user.toString() !== req.user?.id) {
+                    let commissionSum = 0;
+                    if (linkRecord.product) {
+                        // Product-specific link: commission only on the affiliated product
+                        const affiliatedItem = orderItems.find((item) => item.product.toString() === linkRecord.product.toString());
+                        if (affiliatedItem) {
+                            const prod = await Product_1.default.findById(linkRecord.product).select('affiliateCommission').lean();
+                            const rate = prod?.affiliateCommission || 5;
+                            commissionSum = (affiliatedItem.price || 0) * (affiliatedItem.quantity || 1) * (rate / 100);
+                        }
+                    }
+                    else {
+                        // General affiliate link: commission on full subtotal using per-product rates
+                        for (const item of orderItems) {
+                            const prod = await Product_1.default.findById(item.product).select('affiliateCommission').lean();
+                            const rate = prod?.affiliateCommission || 0;
+                            if (rate > 0)
+                                commissionSum += (item.price || 0) * (item.quantity || 1) * (rate / 100);
+                        }
+                        if (commissionSum === 0)
+                            commissionSum = subtotal * 0.05;
+                    }
+                    walletAffiliateUserId = linkRecord.user;
+                    walletAffiliateCommission = Math.round(commissionSum * 100) / 100;
+                    logger_1.logger.info(`🤝 Affiliate code ${affiliateCode} resolved — commission: ₦${walletAffiliateCommission}`);
+                }
+            }
+            catch (affiliateErr) {
+                logger_1.logger.error('Error resolving affiliate:', affiliateErr);
+            }
+        }
         const order = await Order_1.default.create({
             orderNumber,
             user: req.user?.id,
@@ -674,6 +711,7 @@ class OrderController {
             isPickup: deliveryType === 'pickup' || isDigitalOnly,
             vendorShipments,
             isDigital: isDigitalOnly,
+            ...(walletAffiliateUserId && { affiliateUser: walletAffiliateUserId, affiliateCommission: walletAffiliateCommission }),
         });
         logger_1.logger.info(`✅ Order created: ${order._id}`);
         let paymentData = null;
@@ -798,7 +836,7 @@ class OrderController {
      * - NO order is created, NO cart is cleared
      */
     async initializePayment(req, res) {
-        const { shippingAddress, paymentMethod, notes, deliveryType = 'standard', selectedDeliveryPrice, selectedCourier, vendorBreakdown, vCreditsAmount = 0, } = req.body;
+        const { shippingAddress, paymentMethod, notes, deliveryType = 'standard', selectedDeliveryPrice, selectedCourier, vendorBreakdown, vCreditsAmount = 0, affiliateCode, } = req.body;
         logger_1.logger.info('💳 ============================================');
         logger_1.logger.info('💳 INITIALIZE PAYMENT (NO ORDER YET)');
         logger_1.logger.info('💳 ============================================');
@@ -909,6 +947,7 @@ class OrderController {
             vCreditsApplied: validVCredits,
             paymentReference,
             cartId: cart._id.toString(),
+            affiliateCode: affiliateCode || undefined,
             createdAt: new Date().toISOString(),
         };
         let paymentData = null;
@@ -1213,6 +1252,44 @@ class OrderController {
         }
         // Step 7: Create order with COMPLETED payment status
         logger_1.logger.info('💾 Creating order with verified payment...', { orderNumber, total });
+        // Resolve affiliate if a code was passed at checkout
+        let affiliateUserId = undefined;
+        let affiliateCommissionAmount = 0;
+        const snapshotAffiliateCode = snapshot.affiliateCode;
+        if (snapshotAffiliateCode) {
+            try {
+                const linkRecord = await Additional_1.AffiliateLink.findOne({ code: snapshotAffiliateCode, isActive: true });
+                if (linkRecord && linkRecord.user.toString() !== req.user?.id) {
+                    let commissionSum = 0;
+                    if (linkRecord.product) {
+                        // Product-specific link: commission only on the affiliated product
+                        const affiliatedItem = orderItems.find((item) => item.product.toString() === linkRecord.product.toString());
+                        if (affiliatedItem) {
+                            const prod = await Product_1.default.findById(linkRecord.product).select('affiliateCommission').lean();
+                            const rate = prod?.affiliateCommission || 5;
+                            commissionSum = (affiliatedItem.price || 0) * (affiliatedItem.quantity || 1) * (rate / 100);
+                        }
+                    }
+                    else {
+                        // General affiliate link: commission on full subtotal using per-product rates
+                        for (const item of orderItems) {
+                            const prod = await Product_1.default.findById(item.product).select('affiliateCommission').lean();
+                            const rate = prod?.affiliateCommission || 0;
+                            if (rate > 0)
+                                commissionSum += (item.price || 0) * (item.quantity || 1) * (rate / 100);
+                        }
+                        if (commissionSum === 0)
+                            commissionSum = subtotal * 0.05;
+                    }
+                    affiliateUserId = linkRecord.user;
+                    affiliateCommissionAmount = Math.round(commissionSum * 100) / 100;
+                    logger_1.logger.info(`🤝 Affiliate code ${snapshotAffiliateCode} resolved — commission: ₦${affiliateCommissionAmount}`);
+                }
+            }
+            catch (affiliateErr) {
+                logger_1.logger.error('Error resolving affiliate:', affiliateErr);
+            }
+        }
         const order = await Order_1.default.create({
             orderNumber,
             user: req.user?.id,
@@ -1233,6 +1310,7 @@ class OrderController {
             isPickup: deliveryType === 'pickup' || isDigitalOnly,
             vendorShipments,
             isDigital: isDigitalOnly,
+            ...(affiliateUserId && { affiliateUser: affiliateUserId, affiliateCommission: affiliateCommissionAmount }),
         });
         logger_1.logger.info(`✅ Order created with verified payment: ${order._id}`);
         // Step 8: Clear cart
@@ -1277,6 +1355,33 @@ class OrderController {
         }
         catch (error) {
             logger_1.logger.error('Error awarding points:', error);
+        }
+        // Step 11b: Credit affiliate commission immediately on payment
+        if (order.affiliateUser && order.affiliateCommission) {
+            try {
+                let affiliateWallet = await Additional_1.Wallet.findOne({ user: order.affiliateUser });
+                if (!affiliateWallet) {
+                    affiliateWallet = await Additional_1.Wallet.create({ user: order.affiliateUser });
+                }
+                const commissionAmount = order.affiliateCommission;
+                affiliateWallet.balance += commissionAmount;
+                affiliateWallet.totalEarned += commissionAmount;
+                affiliateWallet.transactions.push({
+                    type: types_1.TransactionType.CREDIT,
+                    amount: commissionAmount,
+                    purpose: types_1.WalletPurpose.COMMISSION,
+                    reference: `affiliate_${order.orderNumber}_${Date.now()}`,
+                    description: `Affiliate commission for Order #${order.orderNumber}`,
+                    relatedOrder: order._id,
+                    status: 'completed',
+                    timestamp: new Date(),
+                });
+                await affiliateWallet.save();
+                logger_1.logger.info(`✅ Credited ₦${commissionAmount} affiliate commission immediately for order ${order.orderNumber}`);
+            }
+            catch (affiliateError) {
+                logger_1.logger.error(`Error crediting affiliate commission for order ${order.orderNumber}:`, affiliateError);
+            }
         }
         // Step 12: Send confirmation email
         try {

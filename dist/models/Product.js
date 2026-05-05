@@ -192,6 +192,10 @@ const productSchema = new mongoose_1.Schema({
         type: [String],
         default: [],
     },
+    sizes: {
+        type: [String],
+        default: [],
+    },
     // NEW: Product details fields
     keyFeatures: {
         type: [String],

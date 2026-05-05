@@ -9,7 +9,7 @@
   import Product from '../models/Product';
   import User from '../models/User';
   import VendorProfile from '../models/VendorProfile';
-  import { Wallet } from '../models/Additional';
+  import { Wallet, AffiliateLink } from '../models/Additional';
   import { AppError } from '../middleware/error';
   import { generateOrderNumber } from '../utils/helpers';
   import { paystackService } from '../services/paystack.service';
@@ -557,14 +557,15 @@
      * For Paystack/Flutterwave, use initializePayment → confirmPayment flow instead
      */
     async createOrder(req: AuthRequest, res: Response<ApiResponse>): Promise<void> {
-      const { 
-      shippingAddress, 
-      paymentMethod, 
-      notes, 
+      const {
+      shippingAddress,
+      paymentMethod,
+      notes,
       deliveryType = 'standard',
       selectedDeliveryPrice,
       selectedCourier,
       vendorBreakdown,
+      affiliateCode,
     } = req.body;
 
       logger.info('🛒 ============================================');
@@ -772,6 +773,42 @@
 
       logger.info('💾 Creating order document...', { orderNumber });
 
+      // Resolve affiliate if a code was passed at checkout
+      let walletAffiliateUserId: any = undefined;
+      let walletAffiliateCommission = 0;
+      if (affiliateCode) {
+        try {
+          const linkRecord = await AffiliateLink.findOne({ code: affiliateCode, isActive: true });
+          if (linkRecord && linkRecord.user.toString() !== req.user?.id) {
+            let commissionSum = 0;
+            if (linkRecord.product) {
+              // Product-specific link: commission only on the affiliated product
+              const affiliatedItem = orderItems.find(
+                (item: any) => item.product.toString() === linkRecord.product!.toString()
+              );
+              if (affiliatedItem) {
+                const prod: any = await Product.findById(linkRecord.product).select('affiliateCommission').lean();
+                const rate = prod?.affiliateCommission || 5;
+                commissionSum = (affiliatedItem.price || 0) * (affiliatedItem.quantity || 1) * (rate / 100);
+              }
+            } else {
+              // General affiliate link: commission on full subtotal using per-product rates
+              for (const item of orderItems) {
+                const prod: any = await Product.findById(item.product).select('affiliateCommission').lean();
+                const rate = prod?.affiliateCommission || 0;
+                if (rate > 0) commissionSum += (item.price || 0) * (item.quantity || 1) * (rate / 100);
+              }
+              if (commissionSum === 0) commissionSum = subtotal * 0.05;
+            }
+            walletAffiliateUserId = linkRecord.user;
+            walletAffiliateCommission = Math.round(commissionSum * 100) / 100;
+            logger.info(`🤝 Affiliate code ${affiliateCode} resolved — commission: ₦${walletAffiliateCommission}`);
+          }
+        } catch (affiliateErr) {
+          logger.error('Error resolving affiliate:', affiliateErr);
+        }
+      }
+
       const order = await Order.create({
         orderNumber,
         user: req.user?.id,
@@ -791,6 +828,7 @@
         isPickup: deliveryType === 'pickup' || isDigitalOnly,
         vendorShipments,
         isDigital: isDigitalOnly,
+        ...(walletAffiliateUserId && { affiliateUser: walletAffiliateUserId, affiliateCommission: walletAffiliateCommission }),
       });
 
       logger.info(`✅ Order created: ${order._id}`);
@@ -955,6 +993,7 @@
         selectedCourier,
         vendorBreakdown,
         vCreditsAmount = 0,
+        affiliateCode,
       } = req.body;
 
       logger.info('💳 ============================================');
@@ -1084,6 +1123,7 @@
         vCreditsApplied: validVCredits,
         paymentReference,
         cartId: cart._id.toString(),
+        affiliateCode: affiliateCode || undefined,
         createdAt: new Date().toISOString(),
       };
 
@@ -1414,6 +1454,43 @@
       // Step 7: Create order with COMPLETED payment status
       logger.info('💾 Creating order with verified payment...', { orderNumber, total });
 
+      // Resolve affiliate if a code was passed at checkout
+      let affiliateUserId: any = undefined;
+      let affiliateCommissionAmount = 0;
+      const snapshotAffiliateCode = snapshot.affiliateCode;
+      if (snapshotAffiliateCode) {
+        try {
+          const linkRecord = await AffiliateLink.findOne({ code: snapshotAffiliateCode, isActive: true });
+          if (linkRecord && linkRecord.user.toString() !== req.user?.id) {
+            let commissionSum = 0;
+            if (linkRecord.product) {
+              // Product-specific link: commission only on the affiliated product
+              const affiliatedItem = orderItems.find(
+                (item: any) => item.product.toString() === linkRecord.product!.toString()
+              );
+              if (affiliatedItem) {
+                const prod: any = await Product.findById(linkRecord.product).select('affiliateCommission').lean();
+                const rate = prod?.affiliateCommission || 5;
+                commissionSum = (affiliatedItem.price || 0) * (affiliatedItem.quantity || 1) * (rate / 100);
+              }
+            } else {
+              // General affiliate link: commission on full subtotal using per-product rates
+              for (const item of orderItems) {
+                const prod: any = await Product.findById(item.product).select('affiliateCommission').lean();
+                const rate = prod?.affiliateCommission || 0;
+                if (rate > 0) commissionSum += (item.price || 0) * (item.quantity || 1) * (rate / 100);
+              }
+              if (commissionSum === 0) commissionSum = subtotal * 0.05;
+            }
+            affiliateUserId = linkRecord.user;
+            affiliateCommissionAmount = Math.round(commissionSum * 100) / 100;
+            logger.info(`🤝 Affiliate code ${snapshotAffiliateCode} resolved — commission: ₦${affiliateCommissionAmount}`);
+          }
+        } catch (affiliateErr) {
+          logger.error('Error resolving affiliate:', affiliateErr);
+        }
+      }
+
       const order = await Order.create({
         orderNumber,
         user: req.user?.id,
@@ -1434,6 +1511,7 @@
         isPickup: deliveryType === 'pickup' || isDigitalOnly,
         vendorShipments,
         isDigital: isDigitalOnly,
+        ...(affiliateUserId && { affiliateUser: affiliateUserId, affiliateCommission: affiliateCommissionAmount }),
       });
 
       logger.info(`✅ Order created with verified payment: ${order._id}`);
@@ -1484,6 +1562,33 @@
         logger.info(`✅ Points awarded for order ${orderNumber}`);
       } catch (error) {
         logger.error('Error awarding points:', error);
+      }
+
+      // Step 11b: Credit affiliate commission immediately on payment
+      if (order.affiliateUser && order.affiliateCommission) {
+        try {
+          let affiliateWallet = await Wallet.findOne({ user: order.affiliateUser });
+          if (!affiliateWallet) {
+            affiliateWallet = await Wallet.create({ user: order.affiliateUser });
+          }
+          const commissionAmount = order.affiliateCommission;
+          affiliateWallet.balance += commissionAmount;
+          affiliateWallet.totalEarned += commissionAmount;
+          affiliateWallet.transactions.push({
+            type: TransactionType.CREDIT,
+            amount: commissionAmount,
+            purpose: WalletPurpose.COMMISSION,
+            reference: `affiliate_${order.orderNumber}_${Date.now()}`,
+            description: `Affiliate commission for Order #${order.orderNumber}`,
+            relatedOrder: order._id,
+            status: 'completed',
+            timestamp: new Date(),
+          } as any);
+          await affiliateWallet.save();
+          logger.info(`✅ Credited ₦${commissionAmount} affiliate commission immediately for order ${order.orderNumber}`);
+        } catch (affiliateError) {
+          logger.error(`Error crediting affiliate commission for order ${order.orderNumber}:`, affiliateError);
+        }
       }
 
       // Step 12: Send confirmation email

@@ -81,7 +81,7 @@ class AffiliateController {
                 code,
             });
         }
-        const affiliateUrl = `${process.env.FRONTEND_URL}/products/${product.slug}?ref=${affiliateLink.code}`;
+        const affiliateUrl = `https://vendorspotng.com/products/${product.slug}?ref=${affiliateLink.code}`;
         res.json({
             success: true,
             message: 'Affiliate link generated successfully',
@@ -122,7 +122,7 @@ class AffiliateController {
                 code: user.affiliateCode,
             });
         }
-        const affiliateUrl = `${process.env.FRONTEND_URL}?ref=${user.affiliateCode}`;
+        const affiliateUrl = `https://vendorspotng.com/affiliate/${user.affiliateCode}`;
         res.json({
             success: true,
             message: 'General affiliate link generated',
