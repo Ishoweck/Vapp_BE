@@ -879,6 +879,34 @@
           logger.error('Error awarding points:', error);
         }
 
+        // Credit affiliate commission for wallet payment
+        if (walletAffiliateUserId && walletAffiliateCommission > 0) {
+          try {
+            let affiliateWallet = await Wallet.findOne({ user: walletAffiliateUserId });
+            if (!affiliateWallet) affiliateWallet = await Wallet.create({ user: walletAffiliateUserId });
+            affiliateWallet.balance += walletAffiliateCommission;
+            affiliateWallet.totalEarned += walletAffiliateCommission;
+            affiliateWallet.transactions.push({
+              type: TransactionType.CREDIT,
+              amount: walletAffiliateCommission,
+              purpose: WalletPurpose.COMMISSION,
+              reference: `affiliate_${orderNumber}_${Date.now()}`,
+              description: `Affiliate commission for Order #${orderNumber}`,
+              relatedOrder: order._id,
+              status: 'completed',
+              timestamp: new Date(),
+            } as any);
+            await affiliateWallet.save();
+            await AffiliateLink.findOneAndUpdate(
+              { code: affiliateCode },
+              { $inc: { conversions: 1, totalEarned: walletAffiliateCommission } }
+            );
+            logger.info(`✅ Credited ₦${walletAffiliateCommission} affiliate commission for wallet order ${orderNumber}`);
+          } catch (affiliateErr) {
+            logger.error('Error crediting affiliate commission (wallet):', affiliateErr);
+          }
+        }
+
         logger.info('📦 Shipment will be created when vendor confirms/processes order');
       } else {
         throw new AppError('Invalid payment method. Use /orders/initialize-payment for card payments.', 400);
@@ -1585,6 +1613,14 @@
             timestamp: new Date(),
           } as any);
           await affiliateWallet.save();
+
+          // Update AffiliateLink conversions + totalEarned
+          if (snapshotAffiliateCode) {
+            await AffiliateLink.findOneAndUpdate(
+              { code: snapshotAffiliateCode },
+              { $inc: { conversions: 1, totalEarned: commissionAmount } }
+            );
+          }
           logger.info(`✅ Credited ₦${commissionAmount} affiliate commission immediately for order ${order.orderNumber}`);
         } catch (affiliateError) {
           logger.error(`Error crediting affiliate commission for order ${order.orderNumber}:`, affiliateError);

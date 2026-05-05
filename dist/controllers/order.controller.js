@@ -752,6 +752,32 @@ class OrderController {
             catch (error) {
                 logger_1.logger.error('Error awarding points:', error);
             }
+            // Credit affiliate commission for wallet payment
+            if (walletAffiliateUserId && walletAffiliateCommission > 0) {
+                try {
+                    let affiliateWallet = await Additional_1.Wallet.findOne({ user: walletAffiliateUserId });
+                    if (!affiliateWallet)
+                        affiliateWallet = await Additional_1.Wallet.create({ user: walletAffiliateUserId });
+                    affiliateWallet.balance += walletAffiliateCommission;
+                    affiliateWallet.totalEarned += walletAffiliateCommission;
+                    affiliateWallet.transactions.push({
+                        type: types_1.TransactionType.CREDIT,
+                        amount: walletAffiliateCommission,
+                        purpose: types_1.WalletPurpose.COMMISSION,
+                        reference: `affiliate_${orderNumber}_${Date.now()}`,
+                        description: `Affiliate commission for Order #${orderNumber}`,
+                        relatedOrder: order._id,
+                        status: 'completed',
+                        timestamp: new Date(),
+                    });
+                    await affiliateWallet.save();
+                    await Additional_1.AffiliateLink.findOneAndUpdate({ code: affiliateCode }, { $inc: { conversions: 1, totalEarned: walletAffiliateCommission } });
+                    logger_1.logger.info(`✅ Credited ₦${walletAffiliateCommission} affiliate commission for wallet order ${orderNumber}`);
+                }
+                catch (affiliateErr) {
+                    logger_1.logger.error('Error crediting affiliate commission (wallet):', affiliateErr);
+                }
+            }
             logger_1.logger.info('📦 Shipment will be created when vendor confirms/processes order');
         }
         else {
@@ -1377,6 +1403,10 @@ class OrderController {
                     timestamp: new Date(),
                 });
                 await affiliateWallet.save();
+                // Update AffiliateLink conversions + totalEarned
+                if (snapshotAffiliateCode) {
+                    await Additional_1.AffiliateLink.findOneAndUpdate({ code: snapshotAffiliateCode }, { $inc: { conversions: 1, totalEarned: commissionAmount } });
+                }
                 logger_1.logger.info(`✅ Credited ₦${commissionAmount} affiliate commission immediately for order ${order.orderNumber}`);
             }
             catch (affiliateError) {
