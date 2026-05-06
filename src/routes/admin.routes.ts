@@ -99,6 +99,10 @@ import {
   // Misc
   getActivityLog,
   globalSearch,
+
+  // App Version
+  getAppVersionConfig,
+  updateAppVersionConfig,
 } from '../controllers/admin.controller';
 import { auditMiddleware } from '../middleware/audit';
 
@@ -250,5 +254,11 @@ router.get('/reports/products', authorize(...allAdmins), getProductReport);
 // ================================================================
 router.get('/activity-log', authorize(...allAdmins), getActivityLog);
 router.get('/search', authorize(...allAdmins), globalSearch);
+
+// ================================================================
+// APP VERSION MANAGEMENT
+// ================================================================
+router.get('/app-version', authorize(...allAdmins), getAppVersionConfig);
+router.put('/app-version', authorize(...generalAdmins), updateAppVersionConfig);
 
 export default router;

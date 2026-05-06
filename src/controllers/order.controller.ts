@@ -4,7 +4,7 @@
   import mongoose from 'mongoose';
   import { AuthRequest, ApiResponse, OrderStatus, PaymentStatus, PaymentMethod, TransactionType, WalletPurpose } from '../types';
   import { VendorGroup, VendorDeliveryRate, DeliveryRateResponse } from '../types/shipping.types';
-  import Order from '../models/Order';
+  import Order, { IVendorShipment } from '../models/Order';
   import Cart from '../models/Cart';
   import Product from '../models/Product';
   import User from '../models/User';
@@ -18,6 +18,7 @@
   import { sendOrderConfirmationEmail } from '../utils/email';
   import { notificationService } from '../services/notification.service';
   import { logger } from '../utils/logger';
+  import Conversation from '../models/Conversation';
 
   export class OrderController {
     /**
@@ -2623,10 +2624,20 @@
           (shipment: any) => shipment.vendor.toString() === req.user?.id
         );
 
+        // Calculate total for this vendor's items only
+        const vendorTotal = vendorItems.reduce(
+          (sum: number, item: any) => sum + item.price * item.quantity, 0
+        );
+        const vendorShippingCost = vendorShipment?.shippingCost ?? 0;
+
         return {
           ...order.toObject(),
           items: vendorItems,
           vendorShipment,
+          vendorTotal,
+          vendorShippingCost,
+          // Override the full-order total so vendor-facing views show the right amount
+          total: vendorTotal + vendorShippingCost,
         };
       });
 
@@ -2899,15 +2910,16 @@
           vendorEarnings.set(vendorId, (vendorEarnings.get(vendorId) || 0) + itemTotal);
         }
 
-        // Credit each vendor's wallet (after deducting 8% platform commission)
-        const PLATFORM_COMMISSION_RATE = 0.08;
+        // Credit each vendor's wallet using their individual commission rate (default 8%)
         for (const [vendorId, amount] of vendorEarnings) {
           let vendorWallet = await Wallet.findOne({ user: vendorId });
           if (!vendorWallet) {
             vendorWallet = await Wallet.create({ user: vendorId });
           }
 
-          const commission = Math.round(amount * PLATFORM_COMMISSION_RATE * 100) / 100;
+          const vendorProfile = await VendorProfile.findOne({ user: vendorId }).select('commissionRate');
+          const commissionRate = (vendorProfile?.commissionRate ?? 8) / 100;
+          const commission = Math.round(amount * commissionRate * 100) / 100;
           const vendorAmount = Math.round((amount - commission) * 100) / 100;
 
           vendorWallet.balance += vendorAmount;
@@ -2917,14 +2929,14 @@
             amount: vendorAmount,
             purpose: WalletPurpose.COMMISSION,
             reference: `order_${order.orderNumber}_${Date.now()}`,
-            description: `Payment for Order #${order.orderNumber} (8% platform fee deducted)`,
+            description: `Payment for Order #${order.orderNumber} (${Math.round(commissionRate * 100)}% platform fee deducted)`,
             relatedOrder: order._id,
             status: 'completed',
             timestamp: new Date(),
           } as any);
 
           await vendorWallet.save();
-          logger.info(`Credited ₦${vendorAmount} to vendor ${vendorId} for order ${order.orderNumber} (commission: ₦${commission}, original: ₦${amount})`);
+          logger.info(`Credited ₦${vendorAmount} to vendor ${vendorId} for order ${order.orderNumber} (commission: ₦${commission} at ${Math.round(commissionRate * 100)}%, original: ₦${amount})`);
         }
 
         // Handle affiliate commission if applicable
@@ -2956,12 +2968,156 @@
         logger.error(`Error crediting vendor wallets for order ${order.orderNumber}:`, walletError);
       }
 
+      // Deactivate any conversations tied to this order between the customer and vendors
+      try {
+        const vendorIds = [...new Set(order.items.map((item: any) => item.vendor.toString()))];
+        await Conversation.updateMany(
+          {
+            participants: { $all: [userId] },
+            $or: vendorIds.map((vendorId) => ({ participants: vendorId })),
+            isActive: true,
+          },
+          { isActive: false }
+        );
+        logger.info(`Deactivated conversations for completed order ${order.orderNumber}`);
+      } catch (convError) {
+        logger.error(`Error deactivating conversations for order ${order.orderNumber}:`, convError);
+      }
+
       logger.info(`Order ${order.orderNumber} completed by customer ${userId}`);
 
       res.json({
         success: true,
         message: 'Order completed successfully',
         data: { order },
+      });
+    }
+
+    /**
+     * Complete a single vendor's shipment (customer confirms receipt for one vendor)
+     * When all vendor shipments are received, the whole order becomes delivered.
+     */
+    async completeVendorShipment(req: AuthRequest, res: Response<ApiResponse>): Promise<void> {
+      const { id, vendorId } = req.params;
+      const userId = req.user!.id;
+
+      const order = await Order.findById(id);
+      if (!order) throw new AppError('Order not found', 404);
+      if (order.user.toString() !== userId) throw new AppError('Not authorized', 403);
+      if (order.status === OrderStatus.CANCELLED) throw new AppError('Order is cancelled', 400);
+      if (order.paymentStatus !== PaymentStatus.COMPLETED) throw new AppError('Payment not completed', 400);
+
+      const shipments = (order as any).vendorShipments as IVendorShipment[];
+      if (!shipments || shipments.length === 0) throw new AppError('No vendor shipments found', 400);
+
+      const shipment = shipments.find((s: any) => {
+        const svId = typeof s.vendor === 'object' ? (s.vendor as any)._id?.toString() : s.vendor?.toString();
+        return svId === vendorId;
+      }) as any;
+
+      if (!shipment) throw new AppError('Vendor shipment not found in this order', 404);
+      if (shipment.status === 'delivered') throw new AppError('This shipment is already marked as received', 400);
+
+      shipment.status = 'delivered';
+
+      // Credit this vendor's wallet
+      const vendorItems = order.items.filter((item: any) => {
+        const iVendorId = typeof item.vendor === 'object' ? (item.vendor as any)._id?.toString() : item.vendor?.toString();
+        return iVendorId === vendorId;
+      });
+      const vendorSubtotal = vendorItems.reduce((sum: number, item: any) => sum + item.price * item.quantity, 0);
+
+      try {
+        let vendorWallet = await Wallet.findOne({ user: vendorId });
+        if (!vendorWallet) vendorWallet = await Wallet.create({ user: vendorId });
+
+        const vendorProfile = await VendorProfile.findOne({ user: vendorId }).select('commissionRate');
+        const commissionRate = (vendorProfile?.commissionRate ?? 8) / 100;
+        const commission = Math.round(vendorSubtotal * commissionRate * 100) / 100;
+        const vendorAmount = Math.round((vendorSubtotal - commission) * 100) / 100;
+
+        vendorWallet.balance += vendorAmount;
+        vendorWallet.totalEarned += vendorAmount;
+        vendorWallet.transactions.push({
+          type: TransactionType.CREDIT,
+          amount: vendorAmount,
+          purpose: WalletPurpose.COMMISSION,
+          reference: `order_${order.orderNumber}_vendor_${vendorId}_${Date.now()}`,
+          description: `Payment for Order #${order.orderNumber} (${Math.round(commissionRate * 100)}% platform fee)`,
+          relatedOrder: order._id,
+          status: 'completed',
+          timestamp: new Date(),
+        } as any);
+        await vendorWallet.save();
+        logger.info(`Credited ₦${vendorAmount} to vendor ${vendorId} for shipment in order ${order.orderNumber}`);
+      } catch (walletError) {
+        logger.error('Error crediting vendor wallet on vendor shipment completion:', walletError);
+      }
+
+      // Check if all vendor shipments are now delivered
+      const allDelivered = shipments.every((s: any) => s.status === 'delivered' || s.status === 'cancelled');
+      if (allDelivered) {
+        order.status = OrderStatus.DELIVERED;
+
+        // Handle affiliate commission
+        if (order.affiliateUser && order.affiliateCommission) {
+          try {
+            let affiliateWallet = await Wallet.findOne({ user: order.affiliateUser });
+            if (!affiliateWallet) affiliateWallet = await Wallet.create({ user: order.affiliateUser });
+            affiliateWallet.balance += order.affiliateCommission;
+            affiliateWallet.totalEarned += order.affiliateCommission;
+            affiliateWallet.transactions.push({
+              type: TransactionType.CREDIT,
+              amount: order.affiliateCommission,
+              purpose: WalletPurpose.COMMISSION,
+              reference: `affiliate_${order.orderNumber}_${Date.now()}`,
+              description: `Affiliate commission for Order #${order.orderNumber}`,
+              relatedOrder: order._id,
+              status: 'completed',
+              timestamp: new Date(),
+            } as any);
+            await affiliateWallet.save();
+          } catch (affiliateErr) {
+            logger.error('Error crediting affiliate commission on full delivery:', affiliateErr);
+          }
+        }
+
+        // Deactivate conversations
+        try {
+          const vendorIds = [...new Set(order.items.map((item: any) => item.vendor.toString()))];
+          await Conversation.updateMany(
+            {
+              participants: { $all: [userId] },
+              $or: vendorIds.map((vId) => ({ participants: vId })),
+              isActive: true,
+            },
+            { isActive: false }
+          );
+        } catch (convErr) {
+          logger.error('Error deactivating conversations after full delivery:', convErr);
+        }
+      }
+
+      await order.save();
+
+      // Notify the vendor that their shipment was received
+      try {
+        await notificationService.orderStatusUpdated(
+          order._id.toString(),
+          order.orderNumber,
+          allDelivered ? 'delivered' : 'shipment_received',
+          vendorId
+        );
+      } catch (notifErr) {
+        logger.error('Error sending shipment received notification:', notifErr);
+      }
+
+      res.json({
+        success: true,
+        message: allDelivered
+          ? 'All shipments received! Order is now complete.'
+          : 'Shipment marked as received.',
+        data: { order, allDelivered },
       });
     }
 

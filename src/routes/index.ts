@@ -25,6 +25,7 @@ import messageRoutes from './message.routes';
 import adminRoutes from './admin.routes';
 import auditRoutes from './audit.routes';
 import aiChatRoutes from './ai-chat.routes';
+import { getAppVersionConfig } from '../controllers/admin.controller';
 
 
 const router = Router();
@@ -56,6 +57,9 @@ router.use('/admin', adminRoutes);
 router.use('/admin/audit-logs', auditRoutes);
 router.use('/ai-chat', aiChatRoutes);
 
+
+// Public app version check (no auth required — called by the mobile app on startup)
+router.get('/app/version', getAppVersionConfig);
 
 // Health check
 router.get('/health', (req, res) => {

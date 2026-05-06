@@ -57,7 +57,7 @@ const productSchema = new mongoose_1.Schema({
     },
     description: {
         type: String,
-        required: true,
+        default: '',
     },
     shortDescription: {
         type: String,
@@ -112,11 +112,7 @@ const productSchema = new mongoose_1.Schema({
     },
     images: {
         type: [String],
-        required: true,
-        validate: {
-            validator: (v) => v.length > 0,
-            message: 'At least one image is required',
-        },
+        default: [],
     },
     videos: [String],
     variants: [productVariantSchema],

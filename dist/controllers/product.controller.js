@@ -58,21 +58,27 @@ class ProductController {
             if (!vendorProfile) {
                 throw new error_1.AppError('Please complete your store setup before posting products.', 403);
             }
+            const isDraft = productData.status === 'draft';
             // Generate slug and SKU
             productData.slug = (0, helpers_1.generateSlug)(productData.name);
             if (!productData.sku) {
                 productData.sku = (0, helpers_1.generateSKU)(productData.name);
             }
-            // ✅ UPLOAD IMAGES TO CLOUDINARY
+            // Enforce minimum 2 images only for published products
+            if (!isDraft) {
+                if (!productData.images || !Array.isArray(productData.images) || productData.images.length < 2) {
+                    throw new error_1.AppError('Please upload at least 2 product images', 400);
+                }
+            }
+            // Upload images to Cloudinary (only if images were provided)
             if (productData.images && Array.isArray(productData.images) && productData.images.length > 0) {
                 console.log(`📸 Uploading ${productData.images.length} images to Cloudinary...`);
-                // Upload base64 images to Cloudinary
                 const cloudinaryUrls = await (0, cloudinary_1.uploadMultipleToCloudinary)(productData.images, `products/${req.user?.id}`);
                 productData.images = cloudinaryUrls;
                 console.log(`✅ Images uploaded successfully:`, cloudinaryUrls);
             }
             else {
-                throw new error_1.AppError('At least one product image is required', 400);
+                productData.images = [];
             }
             // ✅ UPLOAD DIGITAL FILE FOR DIGITAL PRODUCTS (if provided)
             if (productData.productType === 'digital' && productData.digitalFileBase64) {
@@ -96,8 +102,8 @@ class ProductController {
                 delete productData.digitalFileVersion;
                 console.log('✅ Digital file uploaded successfully');
             }
-            // Force status to PENDING_APPROVAL - never trust client-sent status for new products
-            productData.status = types_1.ProductStatus.PENDING_APPROVAL;
+            // Drafts keep their status; all other new products go to PENDING_APPROVAL
+            productData.status = isDraft ? types_1.ProductStatus.DRAFT : types_1.ProductStatus.PENDING_APPROVAL;
             console.log('📦 Creating product in database...');
             // Create product in database
             const product = await Product_1.default.create(productData);
@@ -111,16 +117,18 @@ class ProductController {
             }
             // Format product for response
             const formattedProduct = this.formatProduct(product);
-            // Notify vendor followers about new product
-            try {
-                const vendorProfile = await VendorProfile_1.default.findOne({ user: req.user?.id }).select('followers businessName');
-                if (vendorProfile && vendorProfile.followers && vendorProfile.followers.length > 0) {
-                    const followerIds = vendorProfile.followers.map((f) => f.toString());
-                    await notification_service_1.notificationService.newProductFromFollowedVendor(followerIds, vendorProfile.businessName || 'A vendor you follow', product.name, product._id.toString());
+            // Only notify followers when a product is actually published (not for drafts)
+            if (!isDraft) {
+                try {
+                    const vendorProfile = await VendorProfile_1.default.findOne({ user: req.user?.id }).select('followers businessName');
+                    if (vendorProfile && vendorProfile.followers && vendorProfile.followers.length > 0) {
+                        const followerIds = vendorProfile.followers.map((f) => f.toString());
+                        await notification_service_1.notificationService.newProductFromFollowedVendor(followerIds, vendorProfile.businessName || 'A vendor you follow', product.name, product._id.toString());
+                    }
                 }
-            }
-            catch (error) {
-                console.error('Error sending new product notification:', error);
+                catch (error) {
+                    console.error('Error sending new product notification:', error);
+                }
             }
             console.log('✅ Sending success response to frontend');
             // ✅ SEND RESPONSE

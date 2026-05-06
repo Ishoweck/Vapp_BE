@@ -131,5 +131,10 @@ router.get('/reports/products', (0, auth_1.authorize)(...allAdmins), admin_contr
 // ================================================================
 router.get('/activity-log', (0, auth_1.authorize)(...allAdmins), admin_controller_1.getActivityLog);
 router.get('/search', (0, auth_1.authorize)(...allAdmins), admin_controller_1.globalSearch);
+// ================================================================
+// APP VERSION MANAGEMENT
+// ================================================================
+router.get('/app-version', (0, auth_1.authorize)(...allAdmins), admin_controller_1.getAppVersionConfig);
+router.put('/app-version', (0, auth_1.authorize)(...generalAdmins), admin_controller_1.updateAppVersionConfig);
 exports.default = router;
 //# sourceMappingURL=admin.routes.js.map

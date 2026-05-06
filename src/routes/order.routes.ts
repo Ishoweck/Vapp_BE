@@ -180,6 +180,12 @@ router.put(
   asyncHandler(orderController.completeOrder.bind(orderController))
 );
 
+// Customer complete a single vendor's shipment (multi-vendor orders)
+router.put(
+  '/:id/complete-vendor/:vendorId',
+  asyncHandler(orderController.completeVendorShipment.bind(orderController))
+);
+
 // Vendor update order status
 router.put(
   '/:id/status',

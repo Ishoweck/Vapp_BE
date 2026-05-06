@@ -319,4 +319,6 @@ export declare const getActivityLog: (req: import("express").Request, res: Respo
  * Global admin search across users, products, orders, vendors
  */
 export declare const globalSearch: (req: import("express").Request, res: Response, next: import("express").NextFunction) => void;
+export declare const getAppVersionConfig: (req: import("express").Request, res: Response, next: import("express").NextFunction) => void;
+export declare const updateAppVersionConfig: (req: import("express").Request, res: Response, next: import("express").NextFunction) => void;
 //# sourceMappingURL=admin.controller.d.ts.map

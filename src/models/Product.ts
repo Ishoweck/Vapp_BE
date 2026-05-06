@@ -93,7 +93,7 @@ const productSchema = new Schema<IProduct>({
   },
   description: {
     type: String,
-    required: true,
+    default: '',
   },
   shortDescription: {
     type: String,
@@ -148,11 +148,7 @@ const productSchema = new Schema<IProduct>({
   },
   images: {
     type: [String],
-    required: true,
-    validate: {
-      validator: (v: string[]) => v.length > 0,
-      message: 'At least one image is required',
-    },
+    default: [],
   },
   videos: [String],
   variants: [productVariantSchema],

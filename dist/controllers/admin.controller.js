@@ -4,7 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getNotificationHistory = exports.broadcastNotification = exports.deleteCategory = exports.updateCategory = exports.createCategory = exports.getAllCategories = exports.deleteCoupon = exports.updateCoupon = exports.createCoupon = exports.getAllCoupons = exports.addDisputeMessage = exports.resolveDispute = exports.markDisputeUnderReview = exports.getDisputeDetails = exports.getAllDisputes = exports.deleteReview = exports.updateReviewStatus = exports.getAllReviews = exports.processWithdrawal = exports.getPendingWithdrawals = exports.getAllTransactions = exports.getFinancialOverview = exports.processRefund = exports.updateOrderStatus = exports.getOrderDetails = exports.getAllOrders = exports.deleteProduct = exports.toggleProductFeatured = exports.updateProductStatus = exports.getProductDetails = exports.getAllProducts = exports.updateVendorCommission = exports.toggleVendorPremium = exports.toggleVendorStatus = exports.verifyVendor = exports.getVendorDetails = exports.getAllVendors = exports.deleteUser = exports.updateUserRole = exports.updateUserStatus = exports.getUserDetails = exports.getAllUsers = exports.removeAdmin = exports.updateAdminRole = exports.getAllAdmins = exports.createAdmin = exports.getOrderAnalytics = exports.getUserAnalytics = exports.getRevenueAnalytics = exports.getDashboard = void 0;
-exports.globalSearch = exports.getActivityLog = exports.getProductReport = exports.getVendorReport = exports.getSalesReport = exports.deleteChallenge = exports.updateChallenge = exports.createChallenge = exports.getAllChallenges = exports.toggleAffiliateStatus = exports.getAllAffiliates = exports.rejectAccountDeletion = exports.approveAccountDeletion = exports.getAccountDeletionRequests = void 0;
+exports.updateAppVersionConfig = exports.getAppVersionConfig = exports.globalSearch = exports.getActivityLog = exports.getProductReport = exports.getVendorReport = exports.getSalesReport = exports.deleteChallenge = exports.updateChallenge = exports.createChallenge = exports.getAllChallenges = exports.toggleAffiliateStatus = exports.getAllAffiliates = exports.rejectAccountDeletion = exports.approveAccountDeletion = exports.getAccountDeletionRequests = void 0;
 const mongoose_1 = __importDefault(require("mongoose"));
 const types_1 = require("../types");
 const User_1 = __importDefault(require("../models/User"));
@@ -21,6 +21,7 @@ const Additional_1 = require("../models/Additional");
 const notification_service_1 = require("../services/notification.service");
 const helpers_1 = require("../utils/helpers");
 const ayncHandler_1 = require("../utils/ayncHandler");
+const AppVersion_1 = __importDefault(require("../models/AppVersion"));
 // ================================================================
 // DASHBOARD & ANALYTICS
 // ================================================================
@@ -2674,5 +2675,44 @@ exports.globalSearch = (0, ayncHandler_1.asyncHandler)(async (req, res) => {
         success: true,
         data: { users, products, orders, vendors },
     });
+});
+// ================================================================
+// APP VERSION MANAGEMENT
+// ================================================================
+const DEFAULT_VERSION = {
+    latestVersion: '2.1.0',
+    minVersion: '2.0.0',
+    iosStoreUrl: 'https://apps.apple.com/app/vendorspot/id6744490538',
+    androidStoreUrl: 'https://play.google.com/store/apps/details?id=com.vendorspot.app',
+    updateMessage: 'A new version of VendorSpot is available. Please update to continue.',
+    isForceUpdate: false,
+};
+exports.getAppVersionConfig = (0, ayncHandler_1.asyncHandler)(async (req, res) => {
+    let config = await AppVersion_1.default.findOne().sort({ updatedAt: -1 });
+    if (!config) {
+        config = await AppVersion_1.default.create(DEFAULT_VERSION);
+    }
+    res.json({ success: true, data: config });
+});
+exports.updateAppVersionConfig = (0, ayncHandler_1.asyncHandler)(async (req, res) => {
+    const { latestVersion, minVersion, iosStoreUrl, androidStoreUrl, updateMessage, isForceUpdate } = req.body;
+    if (!latestVersion || !minVersion) {
+        res.status(400).json({ success: false, message: 'latestVersion and minVersion are required' });
+        return;
+    }
+    let config = await AppVersion_1.default.findOne().sort({ updatedAt: -1 });
+    if (config) {
+        config.latestVersion = latestVersion;
+        config.minVersion = minVersion;
+        config.iosStoreUrl = iosStoreUrl ?? config.iosStoreUrl;
+        config.androidStoreUrl = androidStoreUrl ?? config.androidStoreUrl;
+        config.updateMessage = updateMessage ?? config.updateMessage;
+        config.isForceUpdate = isForceUpdate ?? config.isForceUpdate;
+        await config.save();
+    }
+    else {
+        config = await AppVersion_1.default.create({ latestVersion, minVersion, iosStoreUrl, androidStoreUrl, updateMessage, isForceUpdate });
+    }
+    res.json({ success: true, data: config, message: 'App version config updated successfully' });
 });
 //# sourceMappingURL=admin.controller.js.map

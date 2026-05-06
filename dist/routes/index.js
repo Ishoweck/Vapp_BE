@@ -30,6 +30,7 @@ const message_routes_1 = __importDefault(require("./message.routes"));
 const admin_routes_1 = __importDefault(require("./admin.routes"));
 const audit_routes_1 = __importDefault(require("./audit.routes"));
 const ai_chat_routes_1 = __importDefault(require("./ai-chat.routes"));
+const admin_controller_1 = require("../controllers/admin.controller");
 const router = (0, express_1.Router)();
 router.use('/auth', auth_routes_1.default);
 router.use('/products', product_routes_1.default);
@@ -57,6 +58,8 @@ router.use('/messages', message_routes_1.default);
 router.use('/admin', admin_routes_1.default);
 router.use('/admin/audit-logs', audit_routes_1.default);
 router.use('/ai-chat', ai_chat_routes_1.default);
+// Public app version check (no auth required — called by the mobile app on startup)
+router.get('/app/version', admin_controller_1.getAppVersionConfig);
 // Health check
 router.get('/health', (req, res) => {
     res.json({

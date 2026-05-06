@@ -35,6 +35,7 @@ import { getPaginationMeta, generateSlug } from '../utils/helpers';
 import { asyncHandler } from '../utils/ayncHandler';
 import { logger } from '../utils/logger';
 import bcrypt from 'bcryptjs';
+import AppVersion from '../models/AppVersion';
 
 // ================================================================
 // DASHBOARD & ANALYTICS
@@ -3290,5 +3291,54 @@ export const globalSearch = asyncHandler(
       success: true,
       data: { users, products, orders, vendors },
     });
+  }
+);
+
+// ================================================================
+// APP VERSION MANAGEMENT
+// ================================================================
+
+const DEFAULT_VERSION = {
+  latestVersion: '2.1.0',
+  minVersion: '2.0.0',
+  iosStoreUrl: 'https://apps.apple.com/app/vendorspot/id6744490538',
+  androidStoreUrl: 'https://play.google.com/store/apps/details?id=com.vendorspot.app',
+  updateMessage: 'A new version of VendorSpot is available. Please update to continue.',
+  isForceUpdate: false,
+};
+
+export const getAppVersionConfig = asyncHandler(
+  async (req: AuthRequest, res: Response<ApiResponse>): Promise<void> => {
+    let config = await AppVersion.findOne().sort({ updatedAt: -1 });
+    if (!config) {
+      config = await AppVersion.create(DEFAULT_VERSION);
+    }
+    res.json({ success: true, data: config });
+  }
+);
+
+export const updateAppVersionConfig = asyncHandler(
+  async (req: AuthRequest, res: Response<ApiResponse>): Promise<void> => {
+    const { latestVersion, minVersion, iosStoreUrl, androidStoreUrl, updateMessage, isForceUpdate } = req.body;
+
+    if (!latestVersion || !minVersion) {
+      res.status(400).json({ success: false, message: 'latestVersion and minVersion are required' });
+      return;
+    }
+
+    let config = await AppVersion.findOne().sort({ updatedAt: -1 });
+    if (config) {
+      config.latestVersion = latestVersion;
+      config.minVersion = minVersion;
+      config.iosStoreUrl = iosStoreUrl ?? config.iosStoreUrl;
+      config.androidStoreUrl = androidStoreUrl ?? config.androidStoreUrl;
+      config.updateMessage = updateMessage ?? config.updateMessage;
+      config.isForceUpdate = isForceUpdate ?? config.isForceUpdate;
+      await config.save();
+    } else {
+      config = await AppVersion.create({ latestVersion, minVersion, iosStoreUrl, androidStoreUrl, updateMessage, isForceUpdate });
+    }
+
+    res.json({ success: true, data: config, message: 'App version config updated successfully' });
   }
 );

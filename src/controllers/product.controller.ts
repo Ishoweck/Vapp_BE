@@ -29,26 +29,32 @@ async createProduct(req: AuthRequest, res: Response<ApiResponse>): Promise<void>
       );
     }
 
+    const isDraft = productData.status === 'draft';
+
     // Generate slug and SKU
     productData.slug = generateSlug(productData.name);
     if (!productData.sku) {
       productData.sku = generateSKU(productData.name);
     }
 
-    // ✅ UPLOAD IMAGES TO CLOUDINARY
+    // Enforce minimum 2 images only for published products
+    if (!isDraft) {
+      if (!productData.images || !Array.isArray(productData.images) || productData.images.length < 2) {
+        throw new AppError('Please upload at least 2 product images', 400);
+      }
+    }
+
+    // Upload images to Cloudinary (only if images were provided)
     if (productData.images && Array.isArray(productData.images) && productData.images.length > 0) {
       console.log(`📸 Uploading ${productData.images.length} images to Cloudinary...`);
-      
-      // Upload base64 images to Cloudinary
       const cloudinaryUrls = await uploadMultipleToCloudinary(
         productData.images,
         `products/${req.user?.id}`
       );
-      
       productData.images = cloudinaryUrls;
       console.log(`✅ Images uploaded successfully:`, cloudinaryUrls);
     } else {
-      throw new AppError('At least one product image is required', 400);
+      productData.images = [];
     }
 
     // ✅ UPLOAD DIGITAL FILE FOR DIGITAL PRODUCTS (if provided)
@@ -82,8 +88,8 @@ async createProduct(req: AuthRequest, res: Response<ApiResponse>): Promise<void>
       console.log('✅ Digital file uploaded successfully');
     }
 
-    // Force status to PENDING_APPROVAL - never trust client-sent status for new products
-    productData.status = ProductStatus.PENDING_APPROVAL;
+    // Drafts keep their status; all other new products go to PENDING_APPROVAL
+    productData.status = isDraft ? ProductStatus.DRAFT : ProductStatus.PENDING_APPROVAL;
 
     console.log('📦 Creating product in database...');
 
@@ -103,20 +109,22 @@ async createProduct(req: AuthRequest, res: Response<ApiResponse>): Promise<void>
     // Format product for response
     const formattedProduct = this.formatProduct(product);
 
-    // Notify vendor followers about new product
-    try {
-      const vendorProfile = await VendorProfile.findOne({ user: req.user?.id }).select('followers businessName');
-      if (vendorProfile && vendorProfile.followers && vendorProfile.followers.length > 0) {
-        const followerIds = vendorProfile.followers.map((f: any) => f.toString());
-        await notificationService.newProductFromFollowedVendor(
-          followerIds,
-          vendorProfile.businessName || 'A vendor you follow',
-          product.name,
-          product._id.toString()
-        );
+    // Only notify followers when a product is actually published (not for drafts)
+    if (!isDraft) {
+      try {
+        const vendorProfile = await VendorProfile.findOne({ user: req.user?.id }).select('followers businessName');
+        if (vendorProfile && vendorProfile.followers && vendorProfile.followers.length > 0) {
+          const followerIds = vendorProfile.followers.map((f: any) => f.toString());
+          await notificationService.newProductFromFollowedVendor(
+            followerIds,
+            vendorProfile.businessName || 'A vendor you follow',
+            product.name,
+            product._id.toString()
+          );
+        }
+      } catch (error) {
+        console.error('Error sending new product notification:', error);
       }
-    } catch (error) {
-      console.error('Error sending new product notification:', error);
     }
 
     console.log('✅ Sending success response to frontend');

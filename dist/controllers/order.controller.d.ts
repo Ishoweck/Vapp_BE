@@ -108,6 +108,11 @@ export declare class OrderController {
      */
     completeOrder(req: AuthRequest, res: Response): Promise<void>;
     /**
+     * Complete a single vendor's shipment (customer confirms receipt for one vendor)
+     * When all vendor shipments are received, the whole order becomes delivered.
+     */
+    completeVendorShipment(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
+    /**
      * Helper methods
      */
     private getDefaultRate;
