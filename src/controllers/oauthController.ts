@@ -9,9 +9,35 @@ import { AppError } from '../middleware/error';
 import { OAuth2Client } from 'google-auth-library';
 import axios from 'axios';
 import jwt from 'jsonwebtoken';
+import { createPublicKey } from 'crypto';
 import { queueEmailsInBackground } from '../utils/email-queue';
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
+// Cache Apple's public keys — they rotate infrequently, so 1-hour TTL is fine
+let appleKeysCache: { keys: any[]; fetchedAt: number } | null = null;
+
+async function getApplePublicKey(kid: string): Promise<ReturnType<typeof createPublicKey>> {
+  const now = Date.now();
+  const TTL = 60 * 60 * 1000; // 1 hour
+
+  if (!appleKeysCache || now - appleKeysCache.fetchedAt > TTL) {
+    const { data } = await axios.get('https://appleid.apple.com/auth/keys');
+    appleKeysCache = { keys: data.keys, fetchedAt: now };
+  }
+
+  const jwk = appleKeysCache.keys.find((k: any) => k.kid === kid);
+  if (!jwk) {
+    // Key not in cache — force a refresh once in case Apple rotated keys
+    const { data } = await axios.get('https://appleid.apple.com/auth/keys');
+    appleKeysCache = { keys: data.keys, fetchedAt: now };
+    const refreshedJwk = appleKeysCache.keys.find((k: any) => k.kid === kid);
+    if (!refreshedJwk) throw new AppError('Apple public key not found', 400);
+    return createPublicKey({ key: refreshedJwk, format: 'jwk' });
+  }
+
+  return createPublicKey({ key: jwk, format: 'jwk' });
+}
 
 export class OAuthController {
   /**
@@ -128,14 +154,21 @@ export class OAuthController {
     }
 
     try {
-      // Decode the identity token (Apple JWT)
-      const decodedToken: any = jwt.decode(identityToken, { complete: true });
+      // Decode header to get the key ID, then fetch Apple's matching public key
+      const tokenHeader = JSON.parse(
+        Buffer.from(identityToken.split('.')[0], 'base64url').toString()
+      );
 
-      if (!decodedToken || !decodedToken.payload) {
-        throw new AppError('Invalid Apple token', 400);
-      }
+      const publicKey = await getApplePublicKey(tokenHeader.kid);
 
-      const { email, sub: appleId, email_verified } = decodedToken.payload;
+      // Verify signature, expiry, issuer, and audience — jwt.decode() did none of this
+      const verified: any = jwt.verify(identityToken, publicKey, {
+        algorithms: ['RS256'],
+        issuer: 'https://appleid.apple.com',
+        audience: process.env.APPLE_BUNDLE_ID || 'com.vendorspotng.vendorspot',
+      });
+
+      const { email, sub: appleId, email_verified } = verified;
 
       if (!email) {
         throw new AppError('Email not provided by Apple', 400);

@@ -212,21 +212,21 @@ async getAffiliateDashboard(req: AuthRequest, res: Response<ApiResponse>): Promi
     paymentStatus: 'completed',
   }).select('affiliateCommission status createdAt');
 
-  // Pending = orders where payment is completed but order not yet delivered/completed
-  const pendingCommission = allAffiliateOrders
-    .filter((order) => !['delivered', 'completed'].includes(order.status))
-    .reduce((sum, order) => sum + (order.affiliateCommission || 0), 0);
-
-  // Cleared = orders that are delivered/completed
+  // Only cleared (delivered/completed) orders release commission — paid orders can still be cancelled
   const clearedCommission = allAffiliateOrders
     .filter((order) => ['delivered', 'completed'].includes(order.status))
+    .reduce((sum, order) => sum + (order.affiliateCommission || 0), 0);
+
+  // Pending = paid but not yet delivered (could still be cancelled)
+  const pendingCommission = allAffiliateOrders
+    .filter((order) => !['delivered', 'completed'].includes(order.status))
     .reduce((sum, order) => sum + (order.affiliateCommission || 0), 0);
 
   // Get wallet for withdrawal info
   const wallet = await Wallet.findOne({ user: req.user?.id });
   const totalWithdrawn = wallet?.totalWithdrawn || 0;
 
-  // Available = cleared commissions minus what's already been withdrawn
+  // Available = only cleared commission minus what's already been withdrawn
   const availableBalance = Math.max(clearedCommission - totalWithdrawn, 0);
 
   // Get recent conversions

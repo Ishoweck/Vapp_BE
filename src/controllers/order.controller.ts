@@ -2602,21 +2602,23 @@
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 20;
       const skip = (page - 1) * limit;
+      const { status } = req.query;
 
-      const orders = await Order.find({
-        'items.vendor': req.user?.id,
-      })
+      const query: any = { 'items.vendor': req.user?.id };
+      if (status) query.status = status;
+
+      const orders = await Order.find(query)
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
-        .populate('user', 'firstName lastName email phone')
+        .populate('user', 'firstName lastName email')
         .populate('items.product', 'name images');
 
       const filteredOrders = orders.map(order => {
         const vendorItems = order.items.filter(
           item => item.vendor.toString() === req.user?.id
         );
-        
+
         const vendorShipment = (order as any).vendorShipments?.find(
           (shipment: any) => shipment.vendor.toString() === req.user?.id
         );
@@ -2628,9 +2630,7 @@
         };
       });
 
-      const total = await Order.countDocuments({
-        'items.vendor': req.user?.id,
-      });
+      const total = await Order.countDocuments(query);
 
       res.json({
         success: true,
