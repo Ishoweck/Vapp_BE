@@ -117,7 +117,7 @@ const vendorShipmentSchema = new mongoose_1.Schema({
     estimatedDelivery: Date,
     status: {
         type: String,
-        enum: ['pending', 'created', 'shipped', 'delivered', 'cancelled'],
+        enum: ['pending', 'confirmed', 'processing', 'shipped', 'in_transit', 'delivered', 'cancelled'],
         default: 'pending',
     },
 }, { _id: false });

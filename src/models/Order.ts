@@ -18,7 +18,7 @@ export interface IVendorShipment {
   shipmentId?: string;
   courier?: string;
   estimatedDelivery?: Date;
-  status: 'pending' | 'created' | 'shipped' | 'delivered' | 'cancelled';
+  status: 'pending' | 'confirmed' | 'processing' | 'shipped' | 'in_transit' | 'delivered' | 'cancelled';
 }
 
 export interface IOrder extends Document {
@@ -150,7 +150,7 @@ const vendorShipmentSchema = new Schema<IVendorShipment>({
   estimatedDelivery: Date,
   status: {
     type: String,
-    enum: ['pending', 'created', 'shipped', 'delivered', 'cancelled'],
+    enum: ['pending', 'confirmed', 'processing', 'shipped', 'in_transit', 'delivered', 'cancelled'],
     default: 'pending',
   },
 }, { _id: false });

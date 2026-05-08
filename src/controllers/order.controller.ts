@@ -2095,7 +2095,7 @@
      */
     async checkActiveOrderWith(req: AuthRequest, res: Response<ApiResponse>): Promise<void> {
       const { counterpartyId } = req.params;
-      const ACTIVE_STATUSES = ['pending', 'confirmed', 'processing', 'shipped'];
+      const ACTIVE_STATUSES = ['pending', 'confirmed', 'processing', 'shipped', 'in_transit'];
 
       let hasActiveOrder = false;
 
@@ -2697,12 +2697,46 @@
 
       // Update status
       const oldStatus = order.status;
-      order.status = status;
+      const vendorShipmentsList = (order as any).vendorShipments as IVendorShipment[] | undefined;
+      const isMultiVendor = vendorShipmentsList && vendorShipmentsList.length > 1;
+
+      if (isMultiVendor) {
+        // Update only this vendor's shipment entry (store the full order-status vocabulary)
+        const thisVendorShipment = vendorShipmentsList.find((s: any) => {
+          const vid = typeof s.vendor === 'object'
+            ? (s.vendor._id?.toString() ?? s.vendor.toString())
+            : s.vendor?.toString();
+          return vid === req.user?.id;
+        });
+
+        if (thisVendorShipment) {
+          thisVendorShipment.status = status as IVendorShipment['status'];
+        }
+
+        // Derive the overall order status from all vendor shipments
+        const allShipmentStatuses = vendorShipmentsList.map((s: any) => s.status as string);
+        if (allShipmentStatuses.every(s => s === 'delivered')) {
+          order.status = OrderStatus.DELIVERED;
+        } else if (allShipmentStatuses.every(s => s === 'cancelled')) {
+          order.status = OrderStatus.CANCELLED;
+        } else if (allShipmentStatuses.some(s => s === 'in_transit' || s === 'shipped')) {
+          order.status = OrderStatus.SHIPPED;
+        } else if (allShipmentStatuses.some(s => s === 'processing' || s === 'confirmed')) {
+          order.status = OrderStatus.PROCESSING;
+        } else {
+          order.status = OrderStatus.PENDING;
+        }
+      } else {
+        // Single-vendor order: update the order status directly
+        order.status = status;
+      }
+
       await order.save();
 
       logger.info('✅ Order status updated:', {
         from: oldStatus,
-        to: status,
+        to: order.status,
+        isMultiVendor,
       });
 
       // Notify customer about status change

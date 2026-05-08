@@ -1802,7 +1802,7 @@ class OrderController {
      */
     async checkActiveOrderWith(req, res) {
         const { counterpartyId } = req.params;
-        const ACTIVE_STATUSES = ['pending', 'confirmed', 'processing', 'shipped'];
+        const ACTIVE_STATUSES = ['pending', 'confirmed', 'processing', 'shipped', 'in_transit'];
         let hasActiveOrder = false;
         if (req.user?.role === 'vendor') {
             hasActiveOrder = !!(await Order_1.default.findOne({
@@ -2295,11 +2295,46 @@ class OrderController {
         logger_1.logger.info('✅ Vendor has items in order');
         // Update status
         const oldStatus = order.status;
-        order.status = status;
+        const vendorShipmentsList = order.vendorShipments;
+        const isMultiVendor = vendorShipmentsList && vendorShipmentsList.length > 1;
+        if (isMultiVendor) {
+            // Update only this vendor's shipment entry (store the full order-status vocabulary)
+            const thisVendorShipment = vendorShipmentsList.find((s) => {
+                const vid = typeof s.vendor === 'object'
+                    ? (s.vendor._id?.toString() ?? s.vendor.toString())
+                    : s.vendor?.toString();
+                return vid === req.user?.id;
+            });
+            if (thisVendorShipment) {
+                thisVendorShipment.status = status;
+            }
+            // Derive the overall order status from all vendor shipments
+            const allShipmentStatuses = vendorShipmentsList.map((s) => s.status);
+            if (allShipmentStatuses.every(s => s === 'delivered')) {
+                order.status = types_1.OrderStatus.DELIVERED;
+            }
+            else if (allShipmentStatuses.every(s => s === 'cancelled')) {
+                order.status = types_1.OrderStatus.CANCELLED;
+            }
+            else if (allShipmentStatuses.some(s => s === 'in_transit' || s === 'shipped')) {
+                order.status = types_1.OrderStatus.SHIPPED;
+            }
+            else if (allShipmentStatuses.some(s => s === 'processing' || s === 'confirmed')) {
+                order.status = types_1.OrderStatus.PROCESSING;
+            }
+            else {
+                order.status = types_1.OrderStatus.PENDING;
+            }
+        }
+        else {
+            // Single-vendor order: update the order status directly
+            order.status = status;
+        }
         await order.save();
         logger_1.logger.info('✅ Order status updated:', {
             from: oldStatus,
-            to: status,
+            to: order.status,
+            isMultiVendor,
         });
         // Notify customer about status change
         try {
