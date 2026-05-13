@@ -5,7 +5,9 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.messageController = exports.MessageController = void 0;
 const message_service_1 = require("../services/message.service");
+const ticket_service_1 = require("../services/ticket.service");
 const error_1 = require("../middleware/error");
+const logger_1 = require("../utils/logger");
 const User_1 = __importDefault(require("../models/User"));
 class MessageController {
     /**
@@ -62,6 +64,7 @@ class MessageController {
      * POST /messages/admin/send
      */
     async adminSendMessage(req, res) {
+        const adminId = req.user.id;
         const { receiverId, message, messageType, fileUrl } = req.body;
         if (!receiverId || !message) {
             throw new error_1.AppError('Receiver ID and message are required', 400);
@@ -83,8 +86,22 @@ class MessageController {
         if (!receiver) {
             throw new error_1.AppError('Receiver not found', 404);
         }
+        // Enforce active session ownership
+        const Conversation = require('../models/Conversation').default;
+        const conv = await Conversation.findOne({
+            participants: { $all: [supportUserId, receiverId], $size: 2 },
+        });
+        if (conv) {
+            const activeSession = await message_service_1.messageService.getActiveSession(conv._id.toString());
+            if (activeSession && activeSession.adminId.toString() !== adminId) {
+                throw new error_1.AppError(`${activeSession.adminName} is currently handling this conversation`, 403);
+            }
+            if (activeSession && activeSession.adminId.toString() === adminId) {
+                await message_service_1.messageService.updateSessionActivity(conv._id.toString(), adminId);
+            }
+        }
         // Send message AS the support user (not the currently logged-in admin)
-        const result = await message_service_1.messageService.sendMessage(supportUserId, receiverId, message, messageType || 'text', fileUrl);
+        const result = await message_service_1.messageService.sendMessage(supportUserId, receiverId, message, messageType || 'text', fileUrl, undefined, 'VendorSpot Support');
         // Emit via socket
         const io = req.app.get('io');
         if (io) {
@@ -105,16 +122,147 @@ class MessageController {
         });
     }
     /**
+     * Admin: Start or resume a support session for a conversation
+     * POST /messages/admin/sessions/start
+     */
+    async startAdminSession(req, res) {
+        const adminId = req.user.id;
+        const { conversationObjectId } = req.body;
+        if (!conversationObjectId) {
+            throw new error_1.AppError('conversationObjectId is required', 400);
+        }
+        const admin = await User_1.default.findById(adminId).select('firstName lastName');
+        if (!admin)
+            throw new error_1.AppError('Admin not found', 404);
+        const adminName = `${admin.firstName} ${admin.lastName}`;
+        const Conversation = require('../models/Conversation').default;
+        const conv = await Conversation.findById(conversationObjectId).populate('participants', '_id role');
+        if (!conv)
+            throw new error_1.AppError('Conversation not found', 404);
+        // Identify the non-admin participant (the user)
+        const adminRoles = ['admin', 'super_admin', 'financial_admin'];
+        const userParticipant = conv.participants.find((p) => !adminRoles.includes(p.role));
+        if (!userParticipant)
+            throw new error_1.AppError('Could not identify user in this conversation', 400);
+        const userId = userParticipant._id.toString();
+        const [p1, p2] = conv.participants.map((p) => p._id.toString());
+        const conversationId = message_service_1.messageService.generateConversationId(p1, p2);
+        const result = await message_service_1.messageService.startSession(conversationObjectId, adminId, adminName, userId, conversationId);
+        if (result.blocked) {
+            throw new error_1.AppError(`${result.blockedBy} is currently handling this conversation`, 409);
+        }
+        if (result.isNew) {
+            // Insert a system message so both parties see the join event
+            const { ChatMessage } = require('../models/Additional');
+            const sysMsg = await ChatMessage.create({
+                conversationId,
+                sender: adminId,
+                receiver: userId,
+                message: `Hi! I'm ${admin.firstName} from VendorSpot Support. I'm here to help you today. How can I assist you?`,
+                messageType: 'text',
+            });
+            const populated = await ChatMessage.findById(sysMsg._id)
+                .populate('sender', 'firstName lastName avatar role')
+                .populate('receiver', 'firstName lastName avatar role');
+            const io = req.app.get('io');
+            if (io) {
+                io.to(conversationId).emit('new_message', { message: populated, conversationId });
+                io.to(`user_${userId}`).emit('new_message_notification', { message: populated, conversationId });
+                io.to(conversationId).emit('admin_session_started', {
+                    session: result.session,
+                    adminName,
+                    conversationId,
+                });
+                io.to(`user_${userId}`).emit('admin_session_started', {
+                    adminName,
+                    conversationId,
+                });
+            }
+        }
+        res.json({ success: true, data: { session: result.session, isNew: result.isNew } });
+    }
+    /**
+     * Admin: End an active support session
+     * POST /messages/admin/sessions/end
+     */
+    async endAdminSession(req, res) {
+        const adminId = req.user.id;
+        const { sessionId } = req.body;
+        if (!sessionId)
+            throw new error_1.AppError('sessionId is required', 400);
+        const session = await message_service_1.messageService.endSession(sessionId, adminId);
+        if (!session)
+            throw new error_1.AppError('Session not found or already ended', 404);
+        // Insert a system message
+        const { ChatMessage } = require('../models/Additional');
+        const sysMsg = await ChatMessage.create({
+            conversationId: session.conversationId,
+            sender: adminId,
+            receiver: session.userId,
+            message: `${session.adminName} has ended the session.`,
+            messageType: 'system',
+        });
+        const populated = await ChatMessage.findById(sysMsg._id)
+            .populate('sender', 'firstName lastName avatar role')
+            .populate('receiver', 'firstName lastName avatar role');
+        const io = req.app.get('io');
+        if (io) {
+            const { conversationId } = session;
+            io.to(conversationId).emit('new_message', { message: populated, conversationId });
+            io.to(`user_${session.userId}`).emit('new_message_notification', { message: populated, conversationId });
+            io.to(conversationId).emit('admin_session_ended', {
+                sessionId,
+                adminName: session.adminName,
+                conversationId,
+            });
+            io.to(`user_${session.userId}`).emit('admin_session_ended', {
+                adminName: session.adminName,
+                conversationId,
+            });
+        }
+        // Auto-create ticket with AI summary (non-blocking — session end succeeds regardless)
+        ticket_service_1.ticketService.createFromSession({
+            sessionId: session._id.toString(),
+            userId: session.userId.toString(),
+            adminId: adminId,
+            conversationId: session.conversationId,
+            startedAt: session.startedAt,
+            endedAt: session.endedAt,
+        }).then((ticket) => {
+            logger_1.logger.info(`Ticket ${ticket.ticketId} created for session ${session._id}`);
+        }).catch((err) => {
+            logger_1.logger.error('Auto ticket creation failed:', err.message);
+        });
+        res.json({ success: true, message: 'Session ended' });
+    }
+    /**
+     * Admin: Get active session status for a conversation
+     * GET /messages/admin/sessions/:conversationObjectId
+     */
+    async getAdminSession(req, res) {
+        const { conversationObjectId } = req.params;
+        const session = await message_service_1.messageService.getActiveSession(conversationObjectId);
+        res.json({ success: true, data: session });
+    }
+    /**
      * Admin: Get messages in any conversation (no sender/receiver filter)
      * GET /messages/admin/conversations/:conversationId
      */
     async getAdminMessages(req, res) {
-        const { conversationId } = req.params;
+        const { conversationId: convObjectId } = req.params;
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 50;
         const skip = (page - 1) * limit;
         const ChatMessage = require('../models/Additional').ChatMessage;
-        // Admin can see ALL messages in the conversation (no sender/receiver filter)
+        const Conversation = require('../models/Conversation').default;
+        // Conversation._id is a MongoDB ObjectId, but ChatMessage.conversationId
+        // is the generated string "sortedId1_sortedId2". Translate before querying.
+        const conv = await Conversation.findById(convObjectId);
+        if (!conv) {
+            throw new error_1.AppError('Conversation not found', 404);
+        }
+        const [p1, p2] = conv.participants.map((p) => p.toString());
+        const conversationId = message_service_1.messageService.generateConversationId(p1, p2);
         const messages = await ChatMessage.find({
             conversationId,
             deleted: { $ne: true },
@@ -133,6 +281,34 @@ class MessageController {
             data: messages.reverse(),
             meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
         });
+    }
+    /**
+     * Admin: Mark all messages in a conversation as read (any admin receiver)
+     * PUT /messages/admin/conversations/:conversationId/read
+     */
+    async adminMarkAsRead(req, res) {
+        const { conversationId: convObjectId } = req.params;
+        const ChatMessage = require('../models/Additional').ChatMessage;
+        const Conversation = require('../models/Conversation').default;
+        const conv = await Conversation.findById(convObjectId);
+        if (!conv)
+            throw new error_1.AppError('Conversation not found', 404);
+        const [p1, p2] = conv.participants.map((p) => p.toString());
+        const conversationId = message_service_1.messageService.generateConversationId(p1, p2);
+        // Find all admin IDs so we can mark any message addressed to any admin as read
+        const adminUsers = await User_1.default.find({
+            role: { $in: ['admin', 'super_admin', 'financial_admin'] },
+        }).select('_id');
+        const adminIds = adminUsers.map((u) => u._id);
+        await ChatMessage.updateMany({ conversationId, receiver: { $in: adminIds }, read: false }, { read: true, readAt: new Date() });
+        // Reset unread count for all admin participants in this conversation
+        for (const participantId of conv.participants.map((p) => p.toString())) {
+            if (adminIds.map((id) => id.toString()).includes(participantId)) {
+                conv.unreadCount.set(participantId, 0);
+            }
+        }
+        await conv.save();
+        res.json({ success: true, message: 'Marked as read' });
     }
     /**
      * Admin: Get ALL support conversations (any conversation involving any admin/super_admin)
@@ -182,8 +358,16 @@ class MessageController {
         const adminIdStrings = adminIds.map((id) => id.toString());
         const formatted = conversations.map((conv) => {
             const otherParticipant = conv.participants.find((p) => !adminIdStrings.includes(p._id.toString())) || conv.participants[0];
+            // Sum unread counts for all admin participants
+            const unreadCount = adminIdStrings.reduce((sum, adminId) => {
+                return sum + (conv.unreadCount?.get ? (conv.unreadCount.get(adminId) || 0) : 0);
+            }, 0);
+            // Generate the string conversationId (used for socket rooms and ChatMessage queries)
+            const participantIds = conv.participants.map((p) => p._id.toString());
+            const conversationId = message_service_1.messageService.generateConversationId(participantIds[0], participantIds[1]);
             return {
                 _id: conv._id,
+                conversationId,
                 otherParticipant,
                 participants: conv.participants,
                 lastMessage: conv.lastMessage ? {
@@ -191,7 +375,7 @@ class MessageController {
                     sender: conv.lastMessage.sender,
                     createdAt: conv.lastMessage.timestamp || conv.lastMessage.createdAt || conv.updatedAt,
                 } : null,
-                unreadCount: 0,
+                unreadCount,
                 updatedAt: conv.updatedAt,
             };
         });

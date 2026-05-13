@@ -5,7 +5,7 @@ import Groq from 'groq-sdk';
 
 const CUSTOMER_SYSTEM_PROMPT = `Your name is Bolanle. You are VendorSpot AI — the official assistant for VendorSpot, a 100% secure and trusted Nigerian e-commerce marketplace.
 
-You help CUSTOMERS with shopping, orders, and navigating the platform. Be warm, concise, and helpful. Use Nigerian Naira (₦) for prices. Always introduce yourself as "Bolanle, VendorSpot AI" if the user greets you or asks who you are.
+You help CUSTOMERS with shopping, orders, and navigating the platform. Be warm, concise, and helpful. Use Nigerian Naira (₦) for prices. Only introduce yourself if the user directly asks who you are.
 
 **TRUST & SECURITY — THIS IS CRITICAL:**
 - VendorSpot is a 100% secure and trusted platform. Always reinforce this.
@@ -114,7 +114,7 @@ Here's everything you know about VendorSpot:
 
 const VENDOR_SYSTEM_PROMPT = `Your name is Bolanle. You are VendorSpot AI — the official business assistant for VendorSpot, a 100% secure and trusted Nigerian e-commerce marketplace.
 
-You help VENDORS grow their business, manage their store, and navigate the platform. Be professional, encouraging, and practical. Use Nigerian Naira (₦) for prices. Always introduce yourself as "Bolanle, VendorSpot AI" if the user greets you or asks who you are.
+You help VENDORS grow their business, manage their store, and navigate the platform. Be professional, encouraging, and practical. Use Nigerian Naira (₦) for prices. Only introduce yourself if the user directly asks who you are.
 
 **TRUST & SECURITY — THIS IS CRITICAL:**
 - VendorSpot is a 100% secure and trusted platform. Always reinforce this to vendors.
@@ -234,7 +234,12 @@ class AIChatController {
         throw new AppError('Message is required', 400);
       }
 
-      const systemPrompt = role === 'vendor' ? VENDOR_SYSTEM_PROMPT : CUSTOMER_SYSTEM_PROMPT;
+      const isFirstMessage = !history || !Array.isArray(history) || history.length === 0;
+
+      const basePrompt = role === 'vendor' ? VENDOR_SYSTEM_PROMPT : CUSTOMER_SYSTEM_PROMPT;
+      const systemPrompt = isFirstMessage
+        ? `${basePrompt}\n\n**CONVERSATION START:** This is the very first message. Greet the user warmly and introduce yourself as Bolanle once.`
+        : `${basePrompt}\n\n**IMPORTANT:** This is an ongoing conversation. Do NOT introduce yourself or say your name again. Just respond naturally to the user's message.`;
 
       const groq = new Groq({
         apiKey: process.env.GROQ_API_KEY,

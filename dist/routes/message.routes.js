@@ -16,8 +16,14 @@ router.get('/unread-count', (0, error_1.asyncHandler)(message_controller_1.messa
 router.get('/admin/conversations', (0, auth_1.authorize)(types_1.UserRole.ADMIN, types_1.UserRole.SUPER_ADMIN), (0, error_1.asyncHandler)(message_controller_1.messageController.getAdminConversations.bind(message_controller_1.messageController)));
 // Admin: Send message as the shared support user (all admins reply in same thread)
 router.post('/admin/send', (0, auth_1.authorize)(types_1.UserRole.ADMIN, types_1.UserRole.SUPER_ADMIN), (0, error_1.asyncHandler)(message_controller_1.messageController.adminSendMessage.bind(message_controller_1.messageController)));
+// Admin: Session management
+router.post('/admin/sessions/start', (0, auth_1.authorize)(types_1.UserRole.ADMIN, types_1.UserRole.SUPER_ADMIN), (0, error_1.asyncHandler)(message_controller_1.messageController.startAdminSession.bind(message_controller_1.messageController)));
+router.post('/admin/sessions/end', (0, auth_1.authorize)(types_1.UserRole.ADMIN, types_1.UserRole.SUPER_ADMIN), (0, error_1.asyncHandler)(message_controller_1.messageController.endAdminSession.bind(message_controller_1.messageController)));
+router.get('/admin/sessions/:conversationObjectId', (0, auth_1.authorize)(types_1.UserRole.ADMIN, types_1.UserRole.SUPER_ADMIN), (0, error_1.asyncHandler)(message_controller_1.messageController.getAdminSession.bind(message_controller_1.messageController)));
 // Admin: Get messages in any conversation (no sender/receiver filter)
 router.get('/admin/conversations/:conversationId', (0, auth_1.authorize)(types_1.UserRole.ADMIN, types_1.UserRole.SUPER_ADMIN), (0, error_1.asyncHandler)(message_controller_1.messageController.getAdminMessages.bind(message_controller_1.messageController)));
+// Admin: Mark all messages in a conversation as read
+router.put('/admin/conversations/:conversationId/read', (0, auth_1.authorize)(types_1.UserRole.ADMIN, types_1.UserRole.SUPER_ADMIN), (0, error_1.asyncHandler)(message_controller_1.messageController.adminMarkAsRead.bind(message_controller_1.messageController)));
 // Get user's conversations
 router.get('/conversations', (0, error_1.asyncHandler)(message_controller_1.messageController.getConversations.bind(message_controller_1.messageController)));
 // Start or get a conversation

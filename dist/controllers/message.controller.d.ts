@@ -12,10 +12,30 @@ export declare class MessageController {
      */
     adminSendMessage(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
     /**
+     * Admin: Start or resume a support session for a conversation
+     * POST /messages/admin/sessions/start
+     */
+    startAdminSession(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
+    /**
+     * Admin: End an active support session
+     * POST /messages/admin/sessions/end
+     */
+    endAdminSession(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
+    /**
+     * Admin: Get active session status for a conversation
+     * GET /messages/admin/sessions/:conversationObjectId
+     */
+    getAdminSession(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
+    /**
      * Admin: Get messages in any conversation (no sender/receiver filter)
      * GET /messages/admin/conversations/:conversationId
      */
     getAdminMessages(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
+    /**
+     * Admin: Mark all messages in a conversation as read (any admin receiver)
+     * PUT /messages/admin/conversations/:conversationId/read
+     */
+    adminMarkAsRead(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
     /**
      * Admin: Get ALL support conversations (any conversation involving any admin/super_admin)
      * GET /messages/admin/conversations

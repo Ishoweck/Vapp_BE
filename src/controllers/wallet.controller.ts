@@ -294,6 +294,7 @@ export class WalletController {
         data: {
           summary: {
             balance: 0,
+            vCredits: 0,
             totalEarned: 0,
             totalSpent: 0,
             totalWithdrawn: 0,
@@ -314,6 +315,7 @@ export class WalletController {
       data: {
         summary: {
           balance: wallet.balance,
+          vCredits: wallet.vCredits,
           totalEarned: wallet.totalEarned,
           totalSpent: wallet.totalSpent,
           totalWithdrawn: wallet.totalWithdrawn,

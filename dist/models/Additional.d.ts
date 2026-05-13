@@ -40,7 +40,7 @@ export interface IChatMessage extends Document {
     sender: Types.ObjectId;
     receiver: Types.ObjectId;
     message: string;
-    messageType: 'text' | 'image' | 'file';
+    messageType: 'text' | 'image' | 'file' | 'system';
     fileUrl?: string;
     orderId?: Types.ObjectId;
     read: boolean;

@@ -7,6 +7,7 @@ exports.messageService = void 0;
 const Additional_1 = require("../models/Additional");
 const Conversation_1 = __importDefault(require("../models/Conversation"));
 const User_1 = __importDefault(require("../models/User"));
+const SupportSession_1 = __importDefault(require("../models/SupportSession"));
 const types_1 = require("../types");
 const notification_service_1 = require("./notification.service");
 const logger_1 = require("../utils/logger");
@@ -37,7 +38,7 @@ class MessageService {
     /**
      * Send a message
      */
-    async sendMessage(senderId, receiverId, message, messageType = 'text', fileUrl, orderId) {
+    async sendMessage(senderId, receiverId, message, messageType = 'text', fileUrl, orderId, senderDisplayName) {
         const { conversation, conversationId } = await this.getOrCreateConversation(senderId, receiverId, orderId);
         // Create the chat message
         const chatMessage = await Additional_1.ChatMessage.create({
@@ -66,7 +67,7 @@ class MessageService {
         // Send push notification to receiver
         try {
             const sender = await User_1.default.findById(senderId).select('firstName lastName');
-            const senderName = sender ? `${sender.firstName} ${sender.lastName}` : 'Someone';
+            const senderName = senderDisplayName || (sender ? `${sender.firstName} ${sender.lastName}` : 'Someone');
             const notifMessage = messageType === 'text'
                 ? message.substring(0, 100)
                 : `Sent ${messageType === 'image' ? 'an image' : 'a file'}`;
@@ -217,6 +218,79 @@ class MessageService {
         return Conversation_1.default.findOne({
             participants: { $all: [userId1, userId2], $size: 2 },
         });
+    }
+    /**
+     * Get the active support session for a conversation, auto-ending if timed out
+     */
+    async getActiveSession(conversationObjectId) {
+        const session = await SupportSession_1.default.findOne({ conversationObjectId, status: 'active' });
+        if (!session)
+            return null;
+        const fifteenMins = 15 * 60 * 1000;
+        if (Date.now() - session.lastActivityAt.getTime() > fifteenMins) {
+            session.status = 'ended';
+            session.endedAt = new Date();
+            session.endReason = 'timeout';
+            await session.save();
+            return null;
+        }
+        return session;
+    }
+    /**
+     * Start or resume a support session for an admin
+     * Returns { session, isNew, blocked, blockedBy }
+     */
+    async startSession(conversationObjectId, adminId, adminName, userId, conversationId) {
+        const existing = await SupportSession_1.default.findOne({ conversationObjectId, status: 'active' });
+        if (existing) {
+            const fifteenMins = 15 * 60 * 1000;
+            if (Date.now() - existing.lastActivityAt.getTime() > fifteenMins) {
+                existing.status = 'ended';
+                existing.endedAt = new Date();
+                existing.endReason = 'timeout';
+                await existing.save();
+                // Fall through to create a new session
+            }
+            else if (existing.adminId.toString() === adminId) {
+                // Same admin resuming — just refresh activity
+                existing.lastActivityAt = new Date();
+                await existing.save();
+                return { session: existing, isNew: false, blocked: false, blockedBy: null };
+            }
+            else {
+                return { session: null, isNew: false, blocked: true, blockedBy: existing.adminName };
+            }
+        }
+        const session = await SupportSession_1.default.create({
+            conversationId,
+            conversationObjectId,
+            adminId,
+            userId,
+            adminName,
+            status: 'active',
+            startedAt: new Date(),
+            lastActivityAt: new Date(),
+        });
+        return { session, isNew: true, blocked: false, blockedBy: null };
+    }
+    /**
+     * End an active session (only the owning admin can end it)
+     */
+    async endSession(sessionId, adminId) {
+        const session = await SupportSession_1.default.findOne({ _id: sessionId, adminId, status: 'active' });
+        if (!session)
+            return null;
+        session.status = 'ended';
+        session.endedAt = new Date();
+        session.endReason = 'admin';
+        await session.save();
+        return session;
+    }
+    /**
+     * Bump lastActivityAt on an active session when admin sends a message
+     */
+    async updateSessionActivity(conversationObjectId, adminId) {
+        return SupportSession_1.default.findOneAndUpdate({ conversationObjectId, adminId, status: 'active' }, { lastActivityAt: new Date() }, { new: true });
     }
 }
 exports.messageService = new MessageService();

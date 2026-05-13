@@ -1,6 +1,7 @@
 import { ChatMessage } from '../models/Additional';
 import Conversation from '../models/Conversation';
 import User from '../models/User';
+import SupportSession from '../models/SupportSession';
 import { NotificationType } from '../types';
 import { notificationService } from './notification.service';
 import { logger } from '../utils/logger';
@@ -43,7 +44,8 @@ class MessageService {
     message: string,
     messageType: 'text' | 'image' | 'file' = 'text',
     fileUrl?: string,
-    orderId?: string
+    orderId?: string,
+    senderDisplayName?: string
   ) {
     const { conversation, conversationId } = await this.getOrCreateConversation(senderId, receiverId, orderId);
 
@@ -77,7 +79,7 @@ class MessageService {
     // Send push notification to receiver
     try {
       const sender = await User.findById(senderId).select('firstName lastName');
-      const senderName = sender ? `${sender.firstName} ${sender.lastName}` : 'Someone';
+      const senderName = senderDisplayName || (sender ? `${sender.firstName} ${sender.lastName}` : 'Someone');
       const notifMessage = messageType === 'text'
         ? message.substring(0, 100)
         : `Sent ${messageType === 'image' ? 'an image' : 'a file'}`;
@@ -258,6 +260,94 @@ class MessageService {
     return Conversation.findOne({
       participants: { $all: [userId1, userId2], $size: 2 },
     });
+  }
+
+  /**
+   * Get the active support session for a conversation, auto-ending if timed out
+   */
+  async getActiveSession(conversationObjectId: string) {
+    const session = await SupportSession.findOne({ conversationObjectId, status: 'active' });
+    if (!session) return null;
+
+    const fifteenMins = 15 * 60 * 1000;
+    if (Date.now() - session.lastActivityAt.getTime() > fifteenMins) {
+      session.status = 'ended';
+      session.endedAt = new Date();
+      session.endReason = 'timeout';
+      await session.save();
+      return null;
+    }
+
+    return session;
+  }
+
+  /**
+   * Start or resume a support session for an admin
+   * Returns { session, isNew, blocked, blockedBy }
+   */
+  async startSession(
+    conversationObjectId: string,
+    adminId: string,
+    adminName: string,
+    userId: string,
+    conversationId: string
+  ) {
+    const existing = await SupportSession.findOne({ conversationObjectId, status: 'active' });
+
+    if (existing) {
+      const fifteenMins = 15 * 60 * 1000;
+      if (Date.now() - existing.lastActivityAt.getTime() > fifteenMins) {
+        existing.status = 'ended';
+        existing.endedAt = new Date();
+        existing.endReason = 'timeout';
+        await existing.save();
+        // Fall through to create a new session
+      } else if (existing.adminId.toString() === adminId) {
+        // Same admin resuming — just refresh activity
+        existing.lastActivityAt = new Date();
+        await existing.save();
+        return { session: existing, isNew: false, blocked: false, blockedBy: null };
+      } else {
+        return { session: null, isNew: false, blocked: true, blockedBy: existing.adminName };
+      }
+    }
+
+    const session = await SupportSession.create({
+      conversationId,
+      conversationObjectId,
+      adminId,
+      userId,
+      adminName,
+      status: 'active',
+      startedAt: new Date(),
+      lastActivityAt: new Date(),
+    });
+
+    return { session, isNew: true, blocked: false, blockedBy: null };
+  }
+
+  /**
+   * End an active session (only the owning admin can end it)
+   */
+  async endSession(sessionId: string, adminId: string) {
+    const session = await SupportSession.findOne({ _id: sessionId, adminId, status: 'active' });
+    if (!session) return null;
+    session.status = 'ended';
+    session.endedAt = new Date();
+    session.endReason = 'admin';
+    await session.save();
+    return session;
+  }
+
+  /**
+   * Bump lastActivityAt on an active session when admin sends a message
+   */
+  async updateSessionActivity(conversationObjectId: string, adminId: string) {
+    return SupportSession.findOneAndUpdate(
+      { conversationObjectId, adminId, status: 'active' },
+      { lastActivityAt: new Date() },
+      { new: true }
+    );
   }
 }
 

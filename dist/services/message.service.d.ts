@@ -17,7 +17,7 @@ declare class MessageService {
     /**
      * Send a message
      */
-    sendMessage(senderId: string, receiverId: string, message: string, messageType?: 'text' | 'image' | 'file', fileUrl?: string, orderId?: string): Promise<{
+    sendMessage(senderId: string, receiverId: string, message: string, messageType?: 'text' | 'image' | 'file', fileUrl?: string, orderId?: string, senderDisplayName?: string): Promise<{
         message: import("mongoose").Document<unknown, {}, import("../models/Additional").IChatMessage, {}, {}> & import("../models/Additional").IChatMessage & Required<{
             _id: import("mongoose").Types.ObjectId;
         }> & {
@@ -87,6 +87,49 @@ declare class MessageService {
      * Get a single conversation by its generated ID and user
      */
     getConversationByParticipants(userId1: string, userId2: string): Promise<import("mongoose").Document<unknown, {}, import("../models/Conversation").IConversation, {}, {}> & import("../models/Conversation").IConversation & Required<{
+        _id: import("mongoose").Types.ObjectId;
+    }> & {
+        __v: number;
+    }>;
+    /**
+     * Get the active support session for a conversation, auto-ending if timed out
+     */
+    getActiveSession(conversationObjectId: string): Promise<import("mongoose").Document<unknown, {}, import("../models/SupportSession").ISupportSession, {}, {}> & import("../models/SupportSession").ISupportSession & Required<{
+        _id: import("mongoose").Types.ObjectId;
+    }> & {
+        __v: number;
+    }>;
+    /**
+     * Start or resume a support session for an admin
+     * Returns { session, isNew, blocked, blockedBy }
+     */
+    startSession(conversationObjectId: string, adminId: string, adminName: string, userId: string, conversationId: string): Promise<{
+        session: import("mongoose").Document<unknown, {}, import("../models/SupportSession").ISupportSession, {}, {}> & import("../models/SupportSession").ISupportSession & Required<{
+            _id: import("mongoose").Types.ObjectId;
+        }> & {
+            __v: number;
+        };
+        isNew: boolean;
+        blocked: boolean;
+        blockedBy: any;
+    } | {
+        session: any;
+        isNew: boolean;
+        blocked: boolean;
+        blockedBy: string;
+    }>;
+    /**
+     * End an active session (only the owning admin can end it)
+     */
+    endSession(sessionId: string, adminId: string): Promise<import("mongoose").Document<unknown, {}, import("../models/SupportSession").ISupportSession, {}, {}> & import("../models/SupportSession").ISupportSession & Required<{
+        _id: import("mongoose").Types.ObjectId;
+    }> & {
+        __v: number;
+    }>;
+    /**
+     * Bump lastActivityAt on an active session when admin sends a message
+     */
+    updateSessionActivity(conversationObjectId: string, adminId: string): Promise<import("mongoose").Document<unknown, {}, import("../models/SupportSession").ISupportSession, {}, {}> & import("../models/SupportSession").ISupportSession & Required<{
         _id: import("mongoose").Types.ObjectId;
     }> & {
         __v: number;

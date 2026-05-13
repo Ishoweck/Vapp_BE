@@ -258,7 +258,7 @@ export interface IChatMessage extends Document {
   sender: Types.ObjectId;
   receiver: Types.ObjectId;
   message: string;
-  messageType: 'text' | 'image' | 'file';
+  messageType: 'text' | 'image' | 'file' | 'system';
   fileUrl?: string;
   orderId?: Types.ObjectId;
   read: boolean;
@@ -288,7 +288,7 @@ const chatMessageSchema = new Schema<IChatMessage>({
   },
   messageType: {
     type: String,
-    enum: ['text', 'image', 'file'],
+    enum: ['text', 'image', 'file', 'system'],
     default: 'text',
   },
   fileUrl: String,

@@ -29,11 +29,35 @@ router.post(
   asyncHandler(messageController.adminSendMessage.bind(messageController))
 );
 
+// Admin: Session management
+router.post(
+  '/admin/sessions/start',
+  authorize(UserRole.ADMIN, UserRole.SUPER_ADMIN),
+  asyncHandler(messageController.startAdminSession.bind(messageController))
+);
+router.post(
+  '/admin/sessions/end',
+  authorize(UserRole.ADMIN, UserRole.SUPER_ADMIN),
+  asyncHandler(messageController.endAdminSession.bind(messageController))
+);
+router.get(
+  '/admin/sessions/:conversationObjectId',
+  authorize(UserRole.ADMIN, UserRole.SUPER_ADMIN),
+  asyncHandler(messageController.getAdminSession.bind(messageController))
+);
+
 // Admin: Get messages in any conversation (no sender/receiver filter)
 router.get(
   '/admin/conversations/:conversationId',
   authorize(UserRole.ADMIN, UserRole.SUPER_ADMIN),
   asyncHandler(messageController.getAdminMessages.bind(messageController))
+);
+
+// Admin: Mark all messages in a conversation as read
+router.put(
+  '/admin/conversations/:conversationId/read',
+  authorize(UserRole.ADMIN, UserRole.SUPER_ADMIN),
+  asyncHandler(messageController.adminMarkAsRead.bind(messageController))
 );
 
 // Get user's conversations

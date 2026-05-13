@@ -22,6 +22,7 @@ import webhookRoutes from './webhook.routes';
 import questionRoutes from "./question.routes"
 import disputeRoutes from "./dispute.routes"
 import messageRoutes from './message.routes';
+import ticketRoutes from './ticket.routes';
 import adminRoutes from './admin.routes';
 import auditRoutes from './audit.routes';
 import aiChatRoutes from './ai-chat.routes';
@@ -53,6 +54,7 @@ router.use('/webhooks', webhookRoutes);
 router.use('/questions', questionRoutes);
 router.use('/disputes', disputeRoutes);
 router.use('/messages', messageRoutes);
+router.use('/tickets', ticketRoutes);
 router.use('/admin', adminRoutes);
 router.use('/admin/audit-logs', auditRoutes);
 router.use('/ai-chat', aiChatRoutes);
