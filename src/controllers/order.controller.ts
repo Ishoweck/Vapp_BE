@@ -3,7 +3,7 @@
   import { Response } from 'express';
   import mongoose from 'mongoose';
   import { AuthRequest, ApiResponse, OrderStatus, PaymentStatus, PaymentMethod, TransactionType, WalletPurpose } from '../types';
-  import { VendorGroup, VendorDeliveryRate, DeliveryRateResponse } from '../types/shipping.types';
+  import { VendorGroup, VendorDeliveryRate, DeliveryRateResponse, VendorRateGroup } from '../types/shipping.types';
   import Order, { IVendorShipment } from '../models/Order';
   import Cart from '../models/Cart';
   import Product from '../models/Product';
@@ -255,10 +255,43 @@
 
         logger.info(`✅ Returning ${rates.length} delivery options (ShipBubble: ${shipBubbleSuccess ? 'SUCCESS' : 'FAILED'})`);
 
+        // Build per-vendor rate groups for multi-vendor checkout UI
+        const vendorRateGroups: VendorRateGroup[] = vendorRates.map((vr) => {
+          const group = vendorGroups.find(g => g.vendorId === vr.vendorId)!;
+          const filteredRates = vr.rates
+            .filter(r => r.type !== 'digital' && r.type !== 'pickup')
+            .map((r, i) => ({
+              id: `${vr.vendorId}-${r.type}-${i}`,
+              type: r.type,
+              name: r.name,
+              description: r.description,
+              price: r.price,
+              estimatedDays: r.estimatedDays,
+              courier: r.courier,
+              logo: r.logo,
+            }));
+          return {
+            vendorId: vr.vendorId,
+            vendorName: vr.vendorName,
+            vendorLogo: group?.vendorLogo,
+            isVerified: group?.isVerified,
+            products: (group?.items || []).map(item => ({
+              productId: item.productId,
+              name: item.productName,
+              image: item.image,
+              variant: item.variant,
+              price: item.price,
+              quantity: item.quantity,
+            })),
+            rates: filteredRates,
+          };
+        });
+
         res.json({
           success: true,
-          data: { 
+          data: {
             rates,
+            vendorRateGroups,
             vendorCount: vendorGroups.length,
             multiVendor: vendorGroups.length > 1,
             source: shipBubbleSuccess ? 'shipbubble' : 'fallback',
@@ -451,12 +484,14 @@
             };
           }
 
-          const vendorName = vendorProfile?.businessName || 
+          const vendorName = vendorProfile?.businessName ||
                             `${product.vendor.firstName} ${product.vendor.lastName}`;
 
           groups.set(vendorId, {
             vendorId,
             vendorName,
+            vendorLogo: vendorProfile?.businessLogo,
+            isVerified: vendorProfile?.verificationStatus === 'verified',
             vendorAddress,
             items: [],
             totalWeight: 0,
@@ -477,6 +512,8 @@
         group.items.push({
           productId: product._id.toString(),
           productName: product.name,
+          image: product.images?.[0],
+          variant: item.variant,
           quantity: item.quantity,
           weight: weight,
           isPhysical: isPhysical,
@@ -566,6 +603,7 @@
       selectedDeliveryPrice,
       selectedCourier,
       vendorBreakdown,
+      vendorDeliveries,
       affiliateCode,
     } = req.body;
 
@@ -656,15 +694,41 @@
 
     if (!isDigitalOnly && deliveryType !== 'pickup') {
       logger.info('📦 Calculating shipping costs...');
-      
-      // ✅ USE SELECTED PRICE FROM CHECKOUT
-      if (selectedDeliveryPrice !== undefined && selectedDeliveryPrice !== null) {
+
+      // ✅ NEW: Per-vendor delivery selections from new checkout UI
+      if (vendorDeliveries && vendorDeliveries.length > 0) {
+        logger.info('📦 Using per-vendor delivery selections');
+        for (const group of vendorGroups) {
+          const physicalItems = group.items.filter(item => item.isPhysical);
+          if (physicalItems.length === 0) continue;
+          const vd = vendorDeliveries.find((v: any) => v.vendorId === group.vendorId);
+          const shippingCost = vd?.price || this.getDefaultRate(deliveryType);
+          totalShippingCost += shippingCost;
+          vendorShipments.push({
+            vendor: group.vendorId,
+            vendorName: group.vendorName,
+            items: group.items.map(item => item.productId),
+            origin: {
+              street: group.vendorAddress.street || '',
+              city: group.vendorAddress.city,
+              state: group.vendorAddress.state,
+              country: group.vendorAddress.country,
+            },
+            shippingCost,
+            courier: vd?.courier || selectedCourier,
+            status: 'pending',
+          });
+          logger.info(`✅ Shipping for ${group.vendorName}: ₦${shippingCost} (${vd?.courier})`);
+        }
+      }
+      // ✅ USE SELECTED PRICE FROM CHECKOUT (legacy)
+      else if (selectedDeliveryPrice !== undefined && selectedDeliveryPrice !== null) {
         logger.info('✅ Using selected delivery price from checkout:', selectedDeliveryPrice);
-        
+
         // ✅ FOR MULTI-VENDOR ORDERS WITH BREAKDOWN
         if (vendorBreakdown && vendorBreakdown.length > 0) {
           logger.info('📦 Multi-vendor order - using vendor breakdown');
-          
+
           for (const group of vendorGroups) {
             const physicalItems = group.items.filter(item => item.isPhysical);
             if (physicalItems.length === 0) {
@@ -672,11 +736,10 @@
               continue;
             }
 
-            // Find this vendor's shipping cost from breakdown
             const vendorShipping = vendorBreakdown.find(
               (v: any) => v.vendorId === group.vendorId
             );
-            
+
             const shippingCost = vendorShipping?.price || this.getDefaultRate(deliveryType);
             totalShippingCost += shippingCost;
 
@@ -697,13 +760,13 @@
 
             logger.info(`✅ Shipping for ${group.vendorName}: ₦${shippingCost} (${vendorShipping?.courier || selectedCourier})`);
           }
-        } 
+        }
         // ✅ FOR SINGLE-VENDOR ORDERS
         else {
           logger.info('📦 Single vendor order - using total price');
-          
+
           totalShippingCost = selectedDeliveryPrice;
-          
+
           for (const group of vendorGroups) {
             const physicalItems = group.items.filter(item => item.isPhysical);
             if (physicalItems.length === 0) {
@@ -1022,6 +1085,7 @@
         selectedDeliveryPrice,
         selectedCourier,
         vendorBreakdown,
+        vendorDeliveries,
         vCreditsAmount = 0,
         affiliateCode,
       } = req.body;
@@ -1076,7 +1140,9 @@
       // Calculate total (same logic as createOrder)
       let totalShippingCost = 0;
       if (!isDigitalOnly && deliveryType !== 'pickup') {
-        if (selectedDeliveryPrice !== undefined && selectedDeliveryPrice !== null) {
+        if (vendorDeliveries && vendorDeliveries.length > 0) {
+          totalShippingCost = vendorDeliveries.reduce((sum: number, v: any) => sum + (v.price || 0), 0);
+        } else if (selectedDeliveryPrice !== undefined && selectedDeliveryPrice !== null) {
           if (vendorBreakdown && vendorBreakdown.length > 0) {
             totalShippingCost = vendorBreakdown.reduce((sum: number, v: any) => sum + (v.price || 0), 0);
           } else {
@@ -1084,8 +1150,8 @@
           }
         } else {
           // Fallback
-          const vendorGroups = await this.groupItemsByVendor(cart.items);
-          for (const group of vendorGroups) {
+          const vendorGroupsFallback = await this.groupItemsByVendor(cart.items);
+          for (const group of vendorGroupsFallback) {
             const physicalItems = group.items.filter(item => item.isPhysical);
             if (physicalItems.length > 0) {
               totalShippingCost += this.getDefaultRate(deliveryType);
@@ -1143,6 +1209,7 @@
         selectedDeliveryPrice,
         selectedCourier,
         vendorBreakdown,
+        vendorDeliveries,
         subtotal,
         discount,
         totalShippingCost,
@@ -1383,13 +1450,37 @@
         selectedDeliveryPrice,
         selectedCourier,
         vendorBreakdown: snapshotVendorBreakdown,
+        vendorDeliveries: snapshotVendorDeliveries,
       } = snapshot;
 
       let totalShippingCost = 0;
       const vendorShipments: any[] = [];
 
       if (!isDigitalOnly && deliveryType !== 'pickup') {
-        if (selectedDeliveryPrice !== undefined && selectedDeliveryPrice !== null) {
+        // ✅ NEW: per-vendor deliveries from new checkout UI
+        if (snapshotVendorDeliveries && snapshotVendorDeliveries.length > 0) {
+          for (const group of vendorGroups) {
+            const physicalItems = group.items.filter(item => item.isPhysical);
+            if (physicalItems.length === 0) continue;
+            const vd = snapshotVendorDeliveries.find((v: any) => v.vendorId === group.vendorId);
+            const shippingCost = vd?.price || this.getDefaultRate(deliveryType);
+            totalShippingCost += shippingCost;
+            vendorShipments.push({
+              vendor: group.vendorId,
+              vendorName: group.vendorName,
+              items: group.items.map(item => item.productId),
+              origin: {
+                street: group.vendorAddress.street || '',
+                city: group.vendorAddress.city,
+                state: group.vendorAddress.state,
+                country: group.vendorAddress.country,
+              },
+              shippingCost,
+              courier: vd?.courier || selectedCourier,
+              status: 'pending',
+            });
+          }
+        } else if (selectedDeliveryPrice !== undefined && selectedDeliveryPrice !== null) {
           if (snapshotVendorBreakdown && snapshotVendorBreakdown.length > 0) {
             for (const group of vendorGroups) {
               const physicalItems = group.items.filter(item => item.isPhysical);

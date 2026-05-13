@@ -251,10 +251,42 @@ class OrderController {
                 rates.push(...this.getFallbackRates());
             }
             logger_1.logger.info(`✅ Returning ${rates.length} delivery options (ShipBubble: ${shipBubbleSuccess ? 'SUCCESS' : 'FAILED'})`);
+            // Build per-vendor rate groups for multi-vendor checkout UI
+            const vendorRateGroups = vendorRates.map((vr) => {
+                const group = vendorGroups.find(g => g.vendorId === vr.vendorId);
+                const filteredRates = vr.rates
+                    .filter(r => r.type !== 'digital' && r.type !== 'pickup')
+                    .map((r, i) => ({
+                    id: `${vr.vendorId}-${r.type}-${i}`,
+                    type: r.type,
+                    name: r.name,
+                    description: r.description,
+                    price: r.price,
+                    estimatedDays: r.estimatedDays,
+                    courier: r.courier,
+                    logo: r.logo,
+                }));
+                return {
+                    vendorId: vr.vendorId,
+                    vendorName: vr.vendorName,
+                    vendorLogo: group?.vendorLogo,
+                    isVerified: group?.isVerified,
+                    products: (group?.items || []).map(item => ({
+                        productId: item.productId,
+                        name: item.productName,
+                        image: item.image,
+                        variant: item.variant,
+                        price: item.price,
+                        quantity: item.quantity,
+                    })),
+                    rates: filteredRates,
+                };
+            });
             res.json({
                 success: true,
                 data: {
                     rates,
+                    vendorRateGroups,
                     vendorCount: vendorGroups.length,
                     multiVendor: vendorGroups.length > 1,
                     source: shipBubbleSuccess ? 'shipbubble' : 'fallback',
@@ -413,6 +445,8 @@ class OrderController {
                 groups.set(vendorId, {
                     vendorId,
                     vendorName,
+                    vendorLogo: vendorProfile?.businessLogo,
+                    isVerified: vendorProfile?.verificationStatus === 'verified',
                     vendorAddress,
                     items: [],
                     totalWeight: 0,
@@ -428,6 +462,8 @@ class OrderController {
             group.items.push({
                 productId: product._id.toString(),
                 productName: product.name,
+                image: product.images?.[0],
+                variant: item.variant,
                 quantity: item.quantity,
                 weight: weight,
                 isPhysical: isPhysical,
@@ -493,7 +529,7 @@ class OrderController {
      * For Paystack/Flutterwave, use initializePayment → confirmPayment flow instead
      */
     async createOrder(req, res) {
-        const { shippingAddress, paymentMethod, notes, deliveryType = 'standard', selectedDeliveryPrice, selectedCourier, vendorBreakdown, affiliateCode, } = req.body;
+        const { shippingAddress, paymentMethod, notes, deliveryType = 'standard', selectedDeliveryPrice, selectedCourier, vendorBreakdown, vendorDeliveries, affiliateCode, } = req.body;
         logger_1.logger.info('🛒 ============================================');
         logger_1.logger.info('🛒 CREATE ORDER STARTED');
         logger_1.logger.info('🛒 ============================================');
@@ -559,8 +595,35 @@ class OrderController {
         const vendorShipments = [];
         if (!isDigitalOnly && deliveryType !== 'pickup') {
             logger_1.logger.info('📦 Calculating shipping costs...');
-            // ✅ USE SELECTED PRICE FROM CHECKOUT
-            if (selectedDeliveryPrice !== undefined && selectedDeliveryPrice !== null) {
+            // ✅ NEW: Per-vendor delivery selections from new checkout UI
+            if (vendorDeliveries && vendorDeliveries.length > 0) {
+                logger_1.logger.info('📦 Using per-vendor delivery selections');
+                for (const group of vendorGroups) {
+                    const physicalItems = group.items.filter(item => item.isPhysical);
+                    if (physicalItems.length === 0)
+                        continue;
+                    const vd = vendorDeliveries.find((v) => v.vendorId === group.vendorId);
+                    const shippingCost = vd?.price || this.getDefaultRate(deliveryType);
+                    totalShippingCost += shippingCost;
+                    vendorShipments.push({
+                        vendor: group.vendorId,
+                        vendorName: group.vendorName,
+                        items: group.items.map(item => item.productId),
+                        origin: {
+                            street: group.vendorAddress.street || '',
+                            city: group.vendorAddress.city,
+                            state: group.vendorAddress.state,
+                            country: group.vendorAddress.country,
+                        },
+                        shippingCost,
+                        courier: vd?.courier || selectedCourier,
+                        status: 'pending',
+                    });
+                    logger_1.logger.info(`✅ Shipping for ${group.vendorName}: ₦${shippingCost} (${vd?.courier})`);
+                }
+            }
+            // ✅ USE SELECTED PRICE FROM CHECKOUT (legacy)
+            else if (selectedDeliveryPrice !== undefined && selectedDeliveryPrice !== null) {
                 logger_1.logger.info('✅ Using selected delivery price from checkout:', selectedDeliveryPrice);
                 // ✅ FOR MULTI-VENDOR ORDERS WITH BREAKDOWN
                 if (vendorBreakdown && vendorBreakdown.length > 0) {
@@ -571,7 +634,6 @@ class OrderController {
                             logger_1.logger.info(`⏭️ Skipping ${group.vendorName} - no physical items`);
                             continue;
                         }
-                        // Find this vendor's shipping cost from breakdown
                         const vendorShipping = vendorBreakdown.find((v) => v.vendorId === group.vendorId);
                         const shippingCost = vendorShipping?.price || this.getDefaultRate(deliveryType);
                         totalShippingCost += shippingCost;
@@ -864,7 +926,7 @@ class OrderController {
      * - NO order is created, NO cart is cleared
      */
     async initializePayment(req, res) {
-        const { shippingAddress, paymentMethod, notes, deliveryType = 'standard', selectedDeliveryPrice, selectedCourier, vendorBreakdown, vCreditsAmount = 0, affiliateCode, } = req.body;
+        const { shippingAddress, paymentMethod, notes, deliveryType = 'standard', selectedDeliveryPrice, selectedCourier, vendorBreakdown, vendorDeliveries, vCreditsAmount = 0, affiliateCode, } = req.body;
         logger_1.logger.info('💳 ============================================');
         logger_1.logger.info('💳 INITIALIZE PAYMENT (NO ORDER YET)');
         logger_1.logger.info('💳 ============================================');
@@ -904,7 +966,10 @@ class OrderController {
         // Calculate total (same logic as createOrder)
         let totalShippingCost = 0;
         if (!isDigitalOnly && deliveryType !== 'pickup') {
-            if (selectedDeliveryPrice !== undefined && selectedDeliveryPrice !== null) {
+            if (vendorDeliveries && vendorDeliveries.length > 0) {
+                totalShippingCost = vendorDeliveries.reduce((sum, v) => sum + (v.price || 0), 0);
+            }
+            else if (selectedDeliveryPrice !== undefined && selectedDeliveryPrice !== null) {
                 if (vendorBreakdown && vendorBreakdown.length > 0) {
                     totalShippingCost = vendorBreakdown.reduce((sum, v) => sum + (v.price || 0), 0);
                 }
@@ -914,8 +979,8 @@ class OrderController {
             }
             else {
                 // Fallback
-                const vendorGroups = await this.groupItemsByVendor(cart.items);
-                for (const group of vendorGroups) {
+                const vendorGroupsFallback = await this.groupItemsByVendor(cart.items);
+                for (const group of vendorGroupsFallback) {
                     const physicalItems = group.items.filter(item => item.isPhysical);
                     if (physicalItems.length > 0) {
                         totalShippingCost += this.getDefaultRate(deliveryType);
@@ -965,6 +1030,7 @@ class OrderController {
             selectedDeliveryPrice,
             selectedCourier,
             vendorBreakdown,
+            vendorDeliveries,
             subtotal,
             discount,
             totalShippingCost,
@@ -1186,11 +1252,36 @@ class OrderController {
             isDigitalOnly = snapshot.isDigitalOnly || false;
         }
         // Step 5: Calculate shipping (use snapshot values — these were locked at checkout)
-        const { shippingAddress, paymentMethod, notes, deliveryType, selectedDeliveryPrice, selectedCourier, vendorBreakdown: snapshotVendorBreakdown, } = snapshot;
+        const { shippingAddress, paymentMethod, notes, deliveryType, selectedDeliveryPrice, selectedCourier, vendorBreakdown: snapshotVendorBreakdown, vendorDeliveries: snapshotVendorDeliveries, } = snapshot;
         let totalShippingCost = 0;
         const vendorShipments = [];
         if (!isDigitalOnly && deliveryType !== 'pickup') {
-            if (selectedDeliveryPrice !== undefined && selectedDeliveryPrice !== null) {
+            // ✅ NEW: per-vendor deliveries from new checkout UI
+            if (snapshotVendorDeliveries && snapshotVendorDeliveries.length > 0) {
+                for (const group of vendorGroups) {
+                    const physicalItems = group.items.filter(item => item.isPhysical);
+                    if (physicalItems.length === 0)
+                        continue;
+                    const vd = snapshotVendorDeliveries.find((v) => v.vendorId === group.vendorId);
+                    const shippingCost = vd?.price || this.getDefaultRate(deliveryType);
+                    totalShippingCost += shippingCost;
+                    vendorShipments.push({
+                        vendor: group.vendorId,
+                        vendorName: group.vendorName,
+                        items: group.items.map(item => item.productId),
+                        origin: {
+                            street: group.vendorAddress.street || '',
+                            city: group.vendorAddress.city,
+                            state: group.vendorAddress.state,
+                            country: group.vendorAddress.country,
+                        },
+                        shippingCost,
+                        courier: vd?.courier || selectedCourier,
+                        status: 'pending',
+                    });
+                }
+            }
+            else if (selectedDeliveryPrice !== undefined && selectedDeliveryPrice !== null) {
                 if (snapshotVendorBreakdown && snapshotVendorBreakdown.length > 0) {
                     for (const group of vendorGroups) {
                         const physicalItems = group.items.filter(item => item.isPhysical);

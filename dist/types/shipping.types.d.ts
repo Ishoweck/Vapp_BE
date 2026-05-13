@@ -1,6 +1,8 @@
 export interface VendorGroup {
     vendorId: string;
     vendorName: string;
+    vendorLogo?: string;
+    isVerified?: boolean;
     vendorAddress: {
         street: string;
         city: string;
@@ -10,12 +12,38 @@ export interface VendorGroup {
     items: {
         productId: string;
         productName: string;
+        image?: string;
+        variant?: string;
         quantity: number;
         weight: number;
         isPhysical: boolean;
         price: number;
     }[];
     totalWeight: number;
+}
+export interface VendorRateGroup {
+    vendorId: string;
+    vendorName: string;
+    vendorLogo?: string;
+    isVerified?: boolean;
+    products: {
+        productId: string;
+        name: string;
+        image?: string;
+        variant?: string;
+        price: number;
+        quantity: number;
+    }[];
+    rates: {
+        id: string;
+        type: string;
+        name: string;
+        description: string;
+        price: number;
+        estimatedDays: string;
+        courier: string;
+        logo?: string;
+    }[];
 }
 export interface VendorDeliveryRate {
     vendorId: string;
