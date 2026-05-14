@@ -11,6 +11,7 @@ import VendorProfile from '../models/VendorProfile';
 import Product from '../models/Product';
 import Order from '../models/Order';
 import User from '../models/User';
+import Dispute from '../models/Dispute';
 import { AppError } from '../middleware/error';
 import { notificationService } from '../services/notification.service';
 import { logger } from '../utils/logger';
@@ -1028,14 +1029,14 @@ export class VendorController {
       isFollowing = vendorProfile.followers?.some(id => id.toString() === userId) || false;
     }
 
-    const products = await Product.find({
-      vendor: vendorId,
-      status: 'active',
-    })
-      .limit(12)
-      .select('name slug price images averageRating totalReviews');
+    const [products, productCount, disputeCount] = await Promise.all([
+      Product.find({ vendor: vendorId, status: 'active' })
+        .select('name slug price images averageRating totalReviews'),
+      Product.countDocuments({ vendor: vendorId, status: 'active' }),
+      Dispute.countDocuments({ vendor: vendorId }),
+    ]);
 
-    const vendorUser = vendorProfile.user as any; // Populated user object
+    const vendorUser = vendorProfile.user as any;
 
     res.json({
       success: true,
@@ -1046,13 +1047,20 @@ export class VendorController {
           businessDescription: vendorProfile.businessDescription,
           businessLogo: vendorProfile.businessLogo,
           businessBanner: vendorProfile.businessBanner,
+          businessAddress: vendorProfile.businessAddress,
           averageRating: vendorProfile.averageRating,
           totalReviews: vendorProfile.totalReviews,
           totalSales: vendorProfile.totalSales,
+          totalOrders: vendorProfile.totalOrders,
+          productCount,
+          disputeCount,
+          responseRate: (vendorProfile as any).responseRate ?? 100,
+          responseSpeed: (vendorProfile as any).responseSpeed ?? 100,
           storefront: vendorProfile.storefront,
           socialMedia: vendorProfile.socialMedia,
           verificationStatus: vendorProfile.verificationStatus,
-          isPremium: (vendorProfile as any).isPremium || false,
+          isPremium: vendorProfile.isPremium || false,
+          isActive: vendorProfile.isActive,
           followersCount: vendorProfile.followers?.length || 0,
           isFollowing,
         },
