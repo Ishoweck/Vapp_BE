@@ -2310,6 +2310,108 @@ class OrderController {
         });
     }
     /**
+     * Cancel a single vendor's shipment within a multi-vendor order
+     */
+    async cancelVendorShipment(req, res) {
+        const { cancelReason } = req.body;
+        const { id: orderId, vendorId } = req.params;
+        const order = await Order_1.default.findOne({ _id: orderId, user: req.user?.id });
+        if (!order)
+            throw new error_1.AppError('Order not found', 404);
+        const shipments = order.vendorShipments;
+        if (!shipments || shipments.length === 0) {
+            throw new error_1.AppError('This order has no vendor shipments', 400);
+        }
+        const shipment = shipments.find((s) => s.vendor.toString() === vendorId);
+        if (!shipment)
+            throw new error_1.AppError('Vendor shipment not found', 404);
+        if (shipment.status === 'cancelled') {
+            throw new error_1.AppError('This shipment is already cancelled', 400);
+        }
+        if (['shipped', 'in_transit', 'delivered'].includes(shipment.status)) {
+            throw new error_1.AppError('This shipment cannot be cancelled — it has already been shipped', 400);
+        }
+        // Mark the shipment cancelled
+        shipment.status = 'cancelled';
+        // Cancel ShipBubble shipment if tracked
+        if (shipment.trackingNumber) {
+            try {
+                await shipbubble_service_1.shipBubbleService.cancelShipment(shipment.trackingNumber);
+                logger_1.logger.info(`ShipBubble shipment cancelled: ${shipment.trackingNumber}`);
+            }
+            catch (error) {
+                logger_1.logger.error(`Error cancelling ShipBubble shipment ${shipment.trackingNumber}:`, error);
+            }
+        }
+        // Restore stock for this vendor's items only
+        const vendorItems = order.items.filter((item) => item.vendor.toString() === vendorId);
+        for (const item of vendorItems) {
+            const product = await Product_1.default.findById(item.product);
+            if (!product)
+                continue;
+            const productType = product.productType?.toUpperCase();
+            const isPhysical = productType !== 'DIGITAL' && productType !== 'SERVICE';
+            if (isPhysical) {
+                await Product_1.default.findByIdAndUpdate(item.product, {
+                    $inc: { quantity: item.quantity, totalSales: -item.quantity },
+                });
+            }
+        }
+        // Calculate refund: vendor items subtotal + their shipping cost
+        const vendorItemsTotal = vendorItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
+        const refundAmount = vendorItemsTotal + (shipment.shippingCost || 0);
+        // If all shipments are now cancelled → cancel the whole order
+        const allCancelled = shipments.every((s) => s.status === 'cancelled');
+        if (allCancelled) {
+            order.status = types_1.OrderStatus.CANCELLED;
+            order.cancelReason = cancelReason;
+        }
+        await order.save();
+        // Refund if payment was completed
+        if (order.paymentStatus === types_1.PaymentStatus.COMPLETED && refundAmount > 0) {
+            const wallet = await Additional_1.Wallet.findOne({ user: req.user?.id });
+            if (wallet) {
+                wallet.balance += refundAmount;
+                wallet.transactions.push({
+                    type: types_1.TransactionType.CREDIT,
+                    amount: refundAmount,
+                    purpose: types_1.WalletPurpose.REFUND,
+                    reference: `REF-${order.orderNumber}-${vendorId.slice(-6)}`,
+                    description: `Refund for cancelled shipment from ${shipment.vendorName} on order ${order.orderNumber}`,
+                    relatedOrder: order._id,
+                    status: 'completed',
+                    timestamp: new Date(),
+                });
+                await wallet.save();
+            }
+            if (allCancelled) {
+                order.paymentStatus = types_1.PaymentStatus.REFUNDED;
+                order.refundAmount = refundAmount;
+            }
+            order.refundReason = cancelReason;
+            await order.save();
+            // Notify customer about refund
+            try {
+                await notification_service_1.notificationService.refundIssued(req.user.id, order.orderNumber, refundAmount);
+            }
+            catch (error) {
+                logger_1.logger.error('Error sending refund notification:', error);
+            }
+        }
+        // Notify the specific vendor
+        try {
+            await notification_service_1.notificationService.orderCancelled(order._id.toString(), order.orderNumber, req.user.id, [vendorId], 'customer');
+        }
+        catch (error) {
+            logger_1.logger.error('Error sending cancel notification to vendor:', error);
+        }
+        res.json({
+            success: true,
+            message: `${shipment.vendorName}'s order cancelled. ₦${refundAmount.toLocaleString()} will be refunded to your wallet.`,
+            data: { order },
+        });
+    }
+    /**
      * Get vendor orders
      */
     async getVendorOrders(req, res) {

@@ -95,6 +95,10 @@ export declare class OrderController {
      */
     cancelOrder(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
     /**
+     * Cancel a single vendor's shipment within a multi-vendor order
+     */
+    cancelVendorShipment(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
+    /**
      * Get vendor orders
      */
     getVendorOrders(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;

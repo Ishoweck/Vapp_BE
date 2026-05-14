@@ -1,5 +1,3 @@
-// models/PointsTransaction.ts - NEW MODEL FOR TRACKING ALL POINT ACTIVITIES
-
 import { Schema, model, Document, Types } from 'mongoose';
 
 export interface IPointsTransaction extends Document {
@@ -10,6 +8,9 @@ export interface IPointsTransaction extends Document {
   points: number;
   description: string;
   reference?: string;
+  status: 'active' | 'locked' | 'expired';
+  expiresAt?: Date;
+  lockedForVendor?: Types.ObjectId;
   metadata?: {
     orderId?: string;
     productId?: string;
@@ -50,6 +51,18 @@ const pointsTransactionSchema = new Schema<IPointsTransaction>(
       type: String,
       sparse: true,
     },
+    status: {
+      type: String,
+      enum: ['active', 'locked', 'expired'],
+      default: 'active',
+    },
+    expiresAt: {
+      type: Date,
+    },
+    lockedForVendor: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+    },
     metadata: {
       type: Schema.Types.Mixed,
       default: {},
@@ -60,10 +73,11 @@ const pointsTransactionSchema = new Schema<IPointsTransaction>(
   }
 );
 
-// Indexes for efficient queries
 pointsTransactionSchema.index({ user: 1, createdAt: -1 });
 pointsTransactionSchema.index({ user: 1, activity: 1 });
 pointsTransactionSchema.index({ type: 1, createdAt: -1 });
+pointsTransactionSchema.index({ status: 1, expiresAt: 1 });
+pointsTransactionSchema.index({ lockedForVendor: 1, status: 1 });
 
 const PointsTransaction = model<IPointsTransaction>('PointsTransaction', pointsTransactionSchema);
 

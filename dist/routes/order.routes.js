@@ -116,8 +116,10 @@ router.post('/confirm-payment/:reference', (0, validation_1.validate)(confirmPay
 // Create order — WALLET PAYMENTS ONLY
 // Card payments must use /initialize-payment → /confirm-payment flow
 router.post('/', (0, validation_1.validate)(createOrderValidation), (0, error_1.asyncHandler)(order_controller_1.orderController.createOrder.bind(order_controller_1.orderController)));
-// Cancel order
+// Cancel order (whole order — single vendor)
 router.post('/:id/cancel', (0, validation_1.validate)(cancelOrderValidation), (0, error_1.asyncHandler)(order_controller_1.orderController.cancelOrder.bind(order_controller_1.orderController)));
+// Cancel a single vendor's shipment within a multi-vendor order
+router.post('/:id/cancel-vendor/:vendorId', (0, validation_1.validate)(cancelOrderValidation), (0, error_1.asyncHandler)(order_controller_1.orderController.cancelVendorShipment.bind(order_controller_1.orderController)));
 // ============================================================
 // PUT ROUTES
 // ============================================================

@@ -1945,6 +1945,22 @@ export const updateReviewStatus = asyncHandler(
       return;
     }
 
+    // Award 5 points to reviewer when their review is approved
+    if (status === 'approved') {
+      try {
+        const { rewardController } = await import('./reward.controller');
+        await rewardController.awardPoints(
+          (review as any).user.toString(),
+          5,
+          'review',
+          'Review approved by admin',
+          { reviewId: review._id }
+        );
+      } catch (err) {
+        console.error('Error awarding review points:', err);
+      }
+    }
+
     res.json({
       success: true,
       message: `Review ${status}`,

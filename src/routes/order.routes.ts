@@ -163,11 +163,18 @@ router.post(
   asyncHandler(orderController.createOrder.bind(orderController))
 );
 
-// Cancel order
+// Cancel order (whole order — single vendor)
 router.post(
   '/:id/cancel',
   validate(cancelOrderValidation),
   asyncHandler(orderController.cancelOrder.bind(orderController))
+);
+
+// Cancel a single vendor's shipment within a multi-vendor order
+router.post(
+  '/:id/cancel-vendor/:vendorId',
+  validate(cancelOrderValidation),
+  asyncHandler(orderController.cancelVendorShipment.bind(orderController))
 );
 
 // ============================================================

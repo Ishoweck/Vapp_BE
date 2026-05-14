@@ -40,6 +40,8 @@ export interface IVendorProfile extends Document {
     twitter?: string;
     tiktok?: string;
   };
+  referredBy?: Types.ObjectId;
+  referralRewarded: boolean;
 }
 
 const vendorProfileSchema = new Schema<IVendorProfile>({
@@ -153,6 +155,14 @@ const vendorProfileSchema = new Schema<IVendorProfile>({
     instagram: String,
     twitter: String,
     tiktok: String,
+  },
+  referredBy: {
+    type: Schema.Types.ObjectId,
+    ref: 'User',
+  },
+  referralRewarded: {
+    type: Boolean,
+    default: false,
   },
 }, {
   timestamps: true,

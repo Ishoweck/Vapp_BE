@@ -5,7 +5,7 @@
 // ============================================================
 
 import { Router } from 'express';
-import { vendorController } from '../controllers/vendor.controller';
+import { vendorController, setVendorReferrer } from '../controllers/vendor.controller';
 import { authenticate, authorize, optionalAuth } from '../middleware/auth';
 import { asyncHandler } from '../middleware/error';
 import { body } from 'express-validator';
@@ -111,6 +111,15 @@ router.post(
 router.get(
   '/profile',
   asyncHandler(vendorController.getVendorProfile.bind(vendorController))
+);
+
+/**
+ * POST /api/v1/vendor/profile/set-referrer
+ * Record who referred this vendor (one-time, before first sale)
+ */
+router.post(
+  '/profile/set-referrer',
+  asyncHandler(setVendorReferrer)
 );
 
 /**

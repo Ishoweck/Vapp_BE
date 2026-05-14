@@ -1129,3 +1129,49 @@ export class VendorController {
 
 
 export const vendorController = new VendorController();
+
+/**
+ * POST /vendor/profile/set-referrer
+ * Vendor records who referred them (one-time, before first sale)
+ */
+export const setVendorReferrer = async (req: AuthRequest, res: Response<ApiResponse>): Promise<void> => {
+  const { referrerId } = req.body;
+
+  if (!referrerId) {
+    res.status(400).json({ success: false, message: 'referrerId is required' });
+    return;
+  }
+
+  const vendorProfile = await VendorProfile.findOne({ user: req.user?.id });
+  if (!vendorProfile) {
+    res.status(404).json({ success: false, message: 'Vendor profile not found' });
+    return;
+  }
+
+  if (vendorProfile.referredBy) {
+    res.status(400).json({ success: false, message: 'Referrer already set' });
+    return;
+  }
+
+  if (referrerId === req.user?.id) {
+    res.status(400).json({ success: false, message: 'You cannot refer yourself' });
+    return;
+  }
+
+  const referrer = await User.findById(referrerId);
+  if (!referrer) {
+    res.status(404).json({ success: false, message: 'Referrer not found' });
+    return;
+  }
+
+  vendorProfile.referredBy = referrerId;
+  await vendorProfile.save();
+
+  const { rewardController } = await import('./reward.controller');
+  await rewardController.awardVendorReferralPoints(referrerId, req.user!.id);
+
+  res.json({
+    success: true,
+    message: 'Referrer recorded. They will receive 500 points when you make your first sale.',
+  });
+};

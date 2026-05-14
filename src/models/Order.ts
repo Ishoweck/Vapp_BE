@@ -29,6 +29,7 @@ export interface IOrder extends Document {
   discount: number;
   shippingCost: number;
   tax: number;
+  serviceCharge: number;
   total: number;
   status: OrderStatus;
   paymentStatus: PaymentStatus;
@@ -180,6 +181,10 @@ const orderSchema = new Schema<IOrder>({
     default: 0,
   },
   tax: {
+    type: Number,
+    default: 0,
+  },
+  serviceCharge: {
     type: Number,
     default: 0,
   },
