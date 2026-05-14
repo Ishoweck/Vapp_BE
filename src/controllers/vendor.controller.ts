@@ -51,7 +51,7 @@ async function computeVendorResponseStats(
       const vendorReply = await ChatMessage.findOne({
         conversationId: convoId,
         sender: vendorUserId,
-        createdAt: { $gt: firstInbound.createdAt },
+        createdAt: { $gt: (firstInbound as any).createdAt },
         deleted: false,
       }).sort({ createdAt: 1 });
 
