@@ -12,9 +12,64 @@ import Product from '../models/Product';
 import Order from '../models/Order';
 import User from '../models/User';
 import Dispute from '../models/Dispute';
+import { ChatMessage } from '../models/Additional';
 import { AppError } from '../middleware/error';
 import { notificationService } from '../services/notification.service';
 import { logger } from '../utils/logger';
+
+const STATS_CACHE_HOURS = 24;
+const FAST_REPLY_HOURS = 24;
+
+async function computeVendorResponseStats(
+  vendorUserId: string
+): Promise<{ responseRate: number; responseSpeed: number }> {
+  // All unique conversations where the vendor received at least one message
+  const conversations = await ChatMessage.distinct('conversationId', {
+    receiver: vendorUserId,
+    deleted: false,
+  });
+
+  if (conversations.length === 0) {
+    return { responseRate: 100, responseSpeed: 100 };
+  }
+
+  let replied = 0;
+  let repliedFast = 0;
+
+  await Promise.all(
+    conversations.map(async (convoId) => {
+      // First inbound message the vendor received in this conversation
+      const firstInbound = await ChatMessage.findOne({
+        conversationId: convoId,
+        receiver: vendorUserId,
+        deleted: false,
+      }).sort({ createdAt: 1 });
+
+      if (!firstInbound) return;
+
+      // Vendor's first reply AFTER that inbound message
+      const vendorReply = await ChatMessage.findOne({
+        conversationId: convoId,
+        sender: vendorUserId,
+        createdAt: { $gt: firstInbound.createdAt },
+        deleted: false,
+      }).sort({ createdAt: 1 });
+
+      if (vendorReply) {
+        replied++;
+        const replyMs = (vendorReply as any).createdAt.getTime() - (firstInbound as any).createdAt.getTime();
+        if (replyMs <= FAST_REPLY_HOURS * 60 * 60 * 1000) {
+          repliedFast++;
+        }
+      }
+    })
+  );
+
+  const responseRate = Math.round((replied / conversations.length) * 100);
+  const responseSpeed = replied > 0 ? Math.round((repliedFast / replied) * 100) : 0;
+
+  return { responseRate, responseSpeed };
+}
 
 export class VendorController {
   /**
@@ -1036,6 +1091,22 @@ export class VendorController {
       Dispute.countDocuments({ vendor: vendorId }),
     ]);
 
+    // Recompute response stats if cache is older than STATS_CACHE_HOURS
+    const cacheExpiry = new Date(Date.now() - STATS_CACHE_HOURS * 60 * 60 * 1000);
+    const statsStale = !vendorProfile.statsComputedAt || vendorProfile.statsComputedAt < cacheExpiry;
+
+    if (statsStale) {
+      try {
+        const stats = await computeVendorResponseStats(vendorId);
+        vendorProfile.responseRate = stats.responseRate;
+        vendorProfile.responseSpeed = stats.responseSpeed;
+        vendorProfile.statsComputedAt = new Date();
+        await vendorProfile.save();
+      } catch (err) {
+        logger.error('Failed to compute vendor response stats:', err);
+      }
+    }
+
     const vendorUser = vendorProfile.user as any;
 
     res.json({
@@ -1054,8 +1125,8 @@ export class VendorController {
           totalOrders: vendorProfile.totalOrders,
           productCount,
           disputeCount,
-          responseRate: (vendorProfile as any).responseRate ?? 100,
-          responseSpeed: (vendorProfile as any).responseSpeed ?? 100,
+          responseRate: vendorProfile.responseRate,
+          responseSpeed: vendorProfile.responseSpeed,
           storefront: vendorProfile.storefront,
           socialMedia: vendorProfile.socialMedia,
           verificationStatus: vendorProfile.verificationStatus,

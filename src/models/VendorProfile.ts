@@ -42,6 +42,9 @@ export interface IVendorProfile extends Document {
   };
   referredBy?: Types.ObjectId;
   referralRewarded: boolean;
+  responseRate: number;
+  responseSpeed: number;
+  statsComputedAt?: Date;
 }
 
 const vendorProfileSchema = new Schema<IVendorProfile>({
@@ -164,6 +167,19 @@ const vendorProfileSchema = new Schema<IVendorProfile>({
     type: Boolean,
     default: false,
   },
+  responseRate: {
+    type: Number,
+    default: 100,
+    min: 0,
+    max: 100,
+  },
+  responseSpeed: {
+    type: Number,
+    default: 100,
+    min: 0,
+    max: 100,
+  },
+  statsComputedAt: Date,
 }, {
   timestamps: true,
 });
