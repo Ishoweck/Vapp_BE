@@ -38,6 +38,11 @@ export interface IVendorProfile extends Document {
         twitter?: string;
         tiktok?: string;
     };
+    referredBy?: Types.ObjectId;
+    referralRewarded: boolean;
+    responseRate: number;
+    responseSpeed: number;
+    statsComputedAt?: Date;
 }
 declare const VendorProfile: mongoose.Model<IVendorProfile, {}, {}, {}, mongoose.Document<unknown, {}, IVendorProfile, {}, {}> & IVendorProfile & Required<{
     _id: Types.ObjectId;

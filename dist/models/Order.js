@@ -149,6 +149,10 @@ const orderSchema = new mongoose_1.Schema({
         type: Number,
         default: 0,
     },
+    serviceCharge: {
+        type: Number,
+        default: 0,
+    },
     total: {
         type: Number,
         required: true,

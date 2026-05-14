@@ -25,6 +25,7 @@ export interface IOrder extends Document {
     discount: number;
     shippingCost: number;
     tax: number;
+    serviceCharge: number;
     total: number;
     status: OrderStatus;
     paymentStatus: PaymentStatus;

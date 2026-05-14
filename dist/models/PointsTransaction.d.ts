@@ -7,6 +7,9 @@ export interface IPointsTransaction extends Document {
     points: number;
     description: string;
     reference?: string;
+    status: 'active' | 'locked' | 'expired';
+    expiresAt?: Date;
+    lockedForVendor?: Types.ObjectId;
     metadata?: {
         orderId?: string;
         productId?: string;

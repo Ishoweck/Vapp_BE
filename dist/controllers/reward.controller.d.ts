@@ -35,6 +35,18 @@ export declare class RewardController {
      */
     checkBadges(userId: string): Promise<void>;
     /**
+     * Expire points older than 60 days (lazy — call before any balance read/write)
+     */
+    expireOldPoints(userId: string): Promise<void>;
+    /**
+     * Award locked points for vendor referral — not usable until vendor's first sale
+     */
+    awardVendorReferralPoints(referrerId: string, vendorId: string): Promise<void>;
+    /**
+     * Unlock vendor referral points when the vendor makes their first sale
+     */
+    unlockVendorReferralPoints(vendorId: string): Promise<void>;
+    /**
      * Award points after order completion
      */
     awardOrderPoints(orderId: string): Promise<void>;

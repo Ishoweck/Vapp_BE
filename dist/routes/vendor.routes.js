@@ -73,6 +73,11 @@ router.post('/profile', (0, validation_1.validate)(createProfileValidation), (0,
  */
 router.get('/profile', (0, error_1.asyncHandler)(vendor_controller_1.vendorController.getVendorProfile.bind(vendor_controller_1.vendorController)));
 /**
+ * POST /api/v1/vendor/profile/set-referrer
+ * Record who referred this vendor (one-time, before first sale)
+ */
+router.post('/profile/set-referrer', (0, error_1.asyncHandler)(vendor_controller_1.setVendorReferrer));
+/**
  * PUT /api/v1/vendor/profile
  * Update vendor profile
  */

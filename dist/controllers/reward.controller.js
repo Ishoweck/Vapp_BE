@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.rewardController = exports.RewardController = void 0;
+const mongoose_1 = require("mongoose");
 const User_1 = __importDefault(require("../models/User"));
 const Order_1 = __importDefault(require("../models/Order"));
 const PointsTransaction_1 = __importDefault(require("../models/PointsTransaction"));
@@ -12,6 +13,7 @@ const Additional_1 = require("../models/Additional");
 const error_1 = require("../middleware/error");
 const notification_service_1 = require("../services/notification.service");
 const logger_1 = require("../utils/logger");
+const POINTS_EXPIRY_DAYS = 60;
 class RewardController {
     constructor() {
         // Track in-flight redemptions to prevent double-click
@@ -21,11 +23,20 @@ class RewardController {
      * Get user points and rewards
      */
     async getUserPoints(req, res) {
-        const user = await User_1.default.findById(req.user?.id);
+        const userId = req.user?.id;
+        // Lazily expire old points before reading balance
+        await this.expireOldPoints(userId);
+        const user = await User_1.default.findById(userId);
         if (!user) {
             throw new error_1.AppError('User not found', 404);
         }
         const currentPoints = user.points || 0;
+        // Count locked points (pending vendor referral)
+        const lockedAgg = await PointsTransaction_1.default.aggregate([
+            { $match: { user: new mongoose_1.Types.ObjectId(userId), status: 'locked', type: 'earn' } },
+            { $group: { _id: null, total: { $sum: '$points' } } },
+        ]);
+        const lockedPoints = lockedAgg[0]?.total || 0;
         // Calculate tier based on current points (drops when points are redeemed)
         let tier = 'Bronze';
         if (currentPoints >= 10000) {
@@ -57,6 +68,7 @@ class RewardController {
             success: true,
             data: {
                 points: currentPoints,
+                lockedPoints,
                 vCredits,
                 tier,
                 pointsToNextTier: Math.max(0, pointsToNext),
@@ -76,6 +88,9 @@ class RewardController {
         // Update user points
         user.points = (user.points || 0) + points;
         await user.save();
+        // Set 60-day expiry from today
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + POINTS_EXPIRY_DAYS);
         // Create transaction record
         await PointsTransaction_1.default.create({
             user: userId,
@@ -83,6 +98,8 @@ class RewardController {
             activity,
             points,
             description,
+            status: 'active',
+            expiresAt,
             metadata,
         });
         // Notify user
@@ -100,12 +117,13 @@ class RewardController {
     async redeemPoints(req, res) {
         const { points } = req.body;
         const userId = req.user?.id;
-        // Prevent double-click / concurrent redemptions
         if (this.redemptionLocks.has(userId)) {
             throw new error_1.AppError('Redemption already in progress. Please wait.', 429);
         }
         this.redemptionLocks.add(userId);
         try {
+            // Expire stale points before allowing redemption
+            await this.expireOldPoints(userId);
             const user = await User_1.default.findById(userId);
             if (!user) {
                 throw new error_1.AppError('User not found', 404);
@@ -352,6 +370,90 @@ class RewardController {
         if (totalSpent >= 100000 && !badges.includes('high-spender')) {
             await this.awardBadge(userId, 'high-spender');
         }
+    }
+    /**
+     * Expire points older than 60 days (lazy — call before any balance read/write)
+     */
+    async expireOldPoints(userId) {
+        const now = new Date();
+        const expired = await PointsTransaction_1.default.find({
+            user: userId,
+            type: 'earn',
+            status: 'active',
+            expiresAt: { $lt: now },
+        });
+        if (expired.length === 0)
+            return;
+        const totalExpired = expired.reduce((sum, tx) => sum + tx.points, 0);
+        await PointsTransaction_1.default.updateMany({ _id: { $in: expired.map((t) => t._id) } }, { status: 'expired' });
+        // Deduct from user — clamp to 0 to avoid negative points
+        await User_1.default.findByIdAndUpdate(userId, {
+            $inc: { points: -totalExpired },
+        });
+        await User_1.default.findOneAndUpdate({ _id: userId, points: { $lt: 0 } }, { points: 0 });
+        await PointsTransaction_1.default.create({
+            user: userId,
+            type: 'expire',
+            activity: 'other',
+            points: -totalExpired,
+            description: `${totalExpired} points expired after ${POINTS_EXPIRY_DAYS} days`,
+            status: 'expired',
+            metadata: { expiredCount: expired.length },
+        });
+        logger_1.logger.info(`Expired ${totalExpired} points for user ${userId} (${expired.length} transactions)`);
+    }
+    /**
+     * Award locked points for vendor referral — not usable until vendor's first sale
+     */
+    async awardVendorReferralPoints(referrerId, vendorId) {
+        const REFERRAL_POINTS = 500;
+        await PointsTransaction_1.default.create({
+            user: referrerId,
+            type: 'earn',
+            activity: 'referral',
+            points: REFERRAL_POINTS,
+            description: 'Vendor referral reward (locked until vendor makes first sale)',
+            status: 'locked',
+            lockedForVendor: new mongoose_1.Types.ObjectId(vendorId),
+            metadata: { vendorId },
+        });
+        try {
+            await notification_service_1.notificationService.pointsEarned(referrerId, REFERRAL_POINTS, 'You referred a vendor! 500 points will unlock when they make their first sale.');
+        }
+        catch (err) {
+            logger_1.logger.error('Error sending referral notification:', err);
+        }
+        logger_1.logger.info(`Locked 500 referral points for user ${referrerId} pending vendor ${vendorId} first sale`);
+    }
+    /**
+     * Unlock vendor referral points when the vendor makes their first sale
+     */
+    async unlockVendorReferralPoints(vendorId) {
+        const lockedTx = await PointsTransaction_1.default.findOne({
+            lockedForVendor: new mongoose_1.Types.ObjectId(vendorId),
+            status: 'locked',
+            type: 'earn',
+            activity: 'referral',
+        });
+        if (!lockedTx)
+            return;
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + POINTS_EXPIRY_DAYS);
+        await PointsTransaction_1.default.findByIdAndUpdate(lockedTx._id, {
+            status: 'active',
+            expiresAt,
+            description: 'Vendor referral reward (unlocked — vendor made first sale)',
+        });
+        await User_1.default.findByIdAndUpdate(lockedTx.user, {
+            $inc: { points: lockedTx.points },
+        });
+        try {
+            await notification_service_1.notificationService.pointsEarned(lockedTx.user.toString(), lockedTx.points, 'Your vendor referral reward is now active! 500 points added to your balance.');
+        }
+        catch (err) {
+            logger_1.logger.error('Error sending unlock notification:', err);
+        }
+        logger_1.logger.info(`Unlocked ${lockedTx.points} referral points for user ${lockedTx.user} (vendor ${vendorId} first sale)`);
     }
     /**
      * Award points after order completion

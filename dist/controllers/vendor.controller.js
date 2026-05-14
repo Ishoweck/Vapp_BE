@@ -4,20 +4,96 @@
 // File: controllers/vendor.controller.ts
 // Replace your entire vendor.controller.ts with this file
 // ============================================================
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.vendorController = exports.VendorController = void 0;
+exports.setVendorReferrer = exports.vendorController = exports.VendorController = void 0;
 const axios_1 = __importDefault(require("axios"));
 const types_1 = require("../types");
 const VendorProfile_1 = __importDefault(require("../models/VendorProfile"));
 const Product_1 = __importDefault(require("../models/Product"));
 const Order_1 = __importDefault(require("../models/Order"));
 const User_1 = __importDefault(require("../models/User"));
+const Dispute_1 = __importDefault(require("../models/Dispute"));
+const Additional_1 = require("../models/Additional");
 const error_1 = require("../middleware/error");
 const notification_service_1 = require("../services/notification.service");
 const logger_1 = require("../utils/logger");
+const STATS_CACHE_HOURS = 24;
+const FAST_REPLY_HOURS = 24;
+async function computeVendorResponseStats(vendorUserId) {
+    // All unique conversations where the vendor received at least one message
+    const conversations = await Additional_1.ChatMessage.distinct('conversationId', {
+        receiver: vendorUserId,
+        deleted: false,
+    });
+    if (conversations.length === 0) {
+        return { responseRate: 100, responseSpeed: 100 };
+    }
+    let replied = 0;
+    let repliedFast = 0;
+    await Promise.all(conversations.map(async (convoId) => {
+        // First inbound message the vendor received in this conversation
+        const firstInbound = await Additional_1.ChatMessage.findOne({
+            conversationId: convoId,
+            receiver: vendorUserId,
+            deleted: false,
+        }).sort({ createdAt: 1 });
+        if (!firstInbound)
+            return;
+        // Vendor's first reply AFTER that inbound message
+        const vendorReply = await Additional_1.ChatMessage.findOne({
+            conversationId: convoId,
+            sender: vendorUserId,
+            createdAt: { $gt: firstInbound.createdAt },
+            deleted: false,
+        }).sort({ createdAt: 1 });
+        if (vendorReply) {
+            replied++;
+            const replyMs = vendorReply.createdAt.getTime() - firstInbound.createdAt.getTime();
+            if (replyMs <= FAST_REPLY_HOURS * 60 * 60 * 1000) {
+                repliedFast++;
+            }
+        }
+    }));
+    const responseRate = Math.round((replied / conversations.length) * 100);
+    const responseSpeed = replied > 0 ? Math.round((repliedFast / replied) * 100) : 0;
+    return { responseRate, responseSpeed };
+}
 class VendorController {
     /**
      * Get top vendors (Public - for home screen)
@@ -858,13 +934,28 @@ class VendorController {
         if (userId) {
             isFollowing = vendorProfile.followers?.some(id => id.toString() === userId) || false;
         }
-        const products = await Product_1.default.find({
-            vendor: vendorId,
-            status: 'active',
-        })
-            .limit(12)
-            .select('name slug price images averageRating totalReviews');
-        const vendorUser = vendorProfile.user; // Populated user object
+        const [products, productCount, disputeCount] = await Promise.all([
+            Product_1.default.find({ vendor: vendorId, status: 'active' })
+                .select('name slug price images averageRating totalReviews'),
+            Product_1.default.countDocuments({ vendor: vendorId, status: 'active' }),
+            Dispute_1.default.countDocuments({ vendor: vendorId }),
+        ]);
+        // Recompute response stats if cache is older than STATS_CACHE_HOURS
+        const cacheExpiry = new Date(Date.now() - STATS_CACHE_HOURS * 60 * 60 * 1000);
+        const statsStale = !vendorProfile.statsComputedAt || vendorProfile.statsComputedAt < cacheExpiry;
+        if (statsStale) {
+            try {
+                const stats = await computeVendorResponseStats(vendorId);
+                vendorProfile.responseRate = stats.responseRate;
+                vendorProfile.responseSpeed = stats.responseSpeed;
+                vendorProfile.statsComputedAt = new Date();
+                await vendorProfile.save();
+            }
+            catch (err) {
+                logger_1.logger.error('Failed to compute vendor response stats:', err);
+            }
+        }
+        const vendorUser = vendorProfile.user;
         res.json({
             success: true,
             data: {
@@ -874,13 +965,20 @@ class VendorController {
                     businessDescription: vendorProfile.businessDescription,
                     businessLogo: vendorProfile.businessLogo,
                     businessBanner: vendorProfile.businessBanner,
+                    businessAddress: vendorProfile.businessAddress,
                     averageRating: vendorProfile.averageRating,
                     totalReviews: vendorProfile.totalReviews,
                     totalSales: vendorProfile.totalSales,
+                    totalOrders: vendorProfile.totalOrders,
+                    productCount,
+                    disputeCount,
+                    responseRate: vendorProfile.responseRate,
+                    responseSpeed: vendorProfile.responseSpeed,
                     storefront: vendorProfile.storefront,
                     socialMedia: vendorProfile.socialMedia,
                     verificationStatus: vendorProfile.verificationStatus,
                     isPremium: vendorProfile.isPremium || false,
+                    isActive: vendorProfile.isActive,
                     followersCount: vendorProfile.followers?.length || 0,
                     isFollowing,
                 },
@@ -951,4 +1049,42 @@ class VendorController {
 }
 exports.VendorController = VendorController;
 exports.vendorController = new VendorController();
+/**
+ * POST /vendor/profile/set-referrer
+ * Vendor records who referred them (one-time, before first sale)
+ */
+const setVendorReferrer = async (req, res) => {
+    const { referrerId } = req.body;
+    if (!referrerId) {
+        res.status(400).json({ success: false, message: 'referrerId is required' });
+        return;
+    }
+    const vendorProfile = await VendorProfile_1.default.findOne({ user: req.user?.id });
+    if (!vendorProfile) {
+        res.status(404).json({ success: false, message: 'Vendor profile not found' });
+        return;
+    }
+    if (vendorProfile.referredBy) {
+        res.status(400).json({ success: false, message: 'Referrer already set' });
+        return;
+    }
+    if (referrerId === req.user?.id) {
+        res.status(400).json({ success: false, message: 'You cannot refer yourself' });
+        return;
+    }
+    const referrer = await User_1.default.findById(referrerId);
+    if (!referrer) {
+        res.status(404).json({ success: false, message: 'Referrer not found' });
+        return;
+    }
+    vendorProfile.referredBy = referrerId;
+    await vendorProfile.save();
+    const { rewardController } = await Promise.resolve().then(() => __importStar(require('./reward.controller')));
+    await rewardController.awardVendorReferralPoints(referrerId, req.user.id);
+    res.json({
+        success: true,
+        message: 'Referrer recorded. They will receive 500 points when you make your first sale.',
+    });
+};
+exports.setVendorReferrer = setVendorReferrer;
 //# sourceMappingURL=vendor.controller.js.map

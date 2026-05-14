@@ -71,4 +71,9 @@ export declare class VendorController {
     getBanks(req: Request, res: Response<ApiResponse>): Promise<void>;
 }
 export declare const vendorController: VendorController;
+/**
+ * POST /vendor/profile/set-referrer
+ * Vendor records who referred them (one-time, before first sale)
+ */
+export declare const setVendorReferrer: (req: AuthRequest, res: Response<ApiResponse>) => Promise<void>;
 //# sourceMappingURL=vendor.controller.d.ts.map

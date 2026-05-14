@@ -54,6 +54,39 @@ const email_1 = require("../utils/email");
 const notification_service_1 = require("../services/notification.service");
 const logger_1 = require("../utils/logger");
 const Conversation_1 = __importDefault(require("../models/Conversation"));
+/** Buyer Protection Fee tiers */
+function calculateServiceCharge(orderTotal) {
+    if (orderTotal >= 100001)
+        return 2000;
+    if (orderTotal >= 50001)
+        return 1500;
+    if (orderTotal >= 20001)
+        return 1000;
+    if (orderTotal >= 1000)
+        return 500;
+    return 0;
+}
+/** Tiered platform fee based on vendor's current-month sales volume */
+async function getVendorCommissionRate(vendorId) {
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const result = await Order_1.default.aggregate([
+        {
+            $match: {
+                'items.vendor': new (require('mongoose').Types.ObjectId)(vendorId),
+                status: { $in: ['delivered', 'completed'] },
+                createdAt: { $gte: monthStart },
+            },
+        },
+        { $group: { _id: null, monthlyVolume: { $sum: '$total' } } },
+    ]);
+    const monthlyVolume = result[0]?.monthlyVolume || 0;
+    if (monthlyVolume >= 2000000)
+        return 6;
+    if (monthlyVolume >= 500000)
+        return 7;
+    return 8;
+}
 class OrderController {
     /**
      * Check if cart contains digital products
@@ -715,7 +748,9 @@ class OrderController {
         const subtotal = cart.subtotal;
         const discount = cart.discount;
         const tax = 0;
-        const total = subtotal - discount + totalShippingCost + tax;
+        const baseTotal = subtotal - discount + totalShippingCost + tax;
+        const serviceCharge = isDigitalOnly ? 0 : calculateServiceCharge(baseTotal);
+        const total = baseTotal + serviceCharge;
         const orderNumber = (0, helpers_1.generateOrderNumber)();
         logger_1.logger.info('💾 Creating order document...', { orderNumber });
         // Resolve affiliate if a code was passed at checkout
@@ -732,7 +767,7 @@ class OrderController {
                         const affiliatedItem = orderItems.find((item) => item.product.toString() === linkRecord.product.toString());
                         if (affiliatedItem) {
                             const prod = await Product_1.default.findById(linkRecord.product).select('affiliateCommission').lean();
-                            const rate = prod?.affiliateCommission || 5;
+                            const rate = prod?.affiliateCommission || 3;
                             commissionSum = (affiliatedItem.price || 0) * (affiliatedItem.quantity || 1) * (rate / 100);
                         }
                     }
@@ -745,7 +780,7 @@ class OrderController {
                                 commissionSum += (item.price || 0) * (item.quantity || 1) * (rate / 100);
                         }
                         if (commissionSum === 0)
-                            commissionSum = subtotal * 0.05;
+                            commissionSum = subtotal * 0.03;
                     }
                     walletAffiliateUserId = linkRecord.user;
                     walletAffiliateCommission = Math.round(commissionSum * 100) / 100;
@@ -764,6 +799,7 @@ class OrderController {
             discount,
             shippingCost: totalShippingCost,
             tax,
+            serviceCharge,
             total,
             status: types_1.OrderStatus.PENDING,
             paymentStatus: types_1.PaymentStatus.PENDING,
@@ -807,41 +843,8 @@ class OrderController {
             if (isDigitalOnly) {
                 logger_1.logger.info(`✅ Digital order completed instantly: ${orderNumber}`);
             }
-            // ✅ AWARD POINTS AFTER WALLET PAYMENT
-            try {
-                const { rewardController } = await Promise.resolve().then(() => __importStar(require('./reward.controller')));
-                await rewardController.awardOrderPoints(order._id.toString());
-                logger_1.logger.info(`✅ Points awarded for order ${orderNumber}`);
-            }
-            catch (error) {
-                logger_1.logger.error('Error awarding points:', error);
-            }
-            // Credit affiliate commission for wallet payment
-            if (walletAffiliateUserId && walletAffiliateCommission > 0) {
-                try {
-                    let affiliateWallet = await Additional_1.Wallet.findOne({ user: walletAffiliateUserId });
-                    if (!affiliateWallet)
-                        affiliateWallet = await Additional_1.Wallet.create({ user: walletAffiliateUserId });
-                    affiliateWallet.balance += walletAffiliateCommission;
-                    affiliateWallet.totalEarned += walletAffiliateCommission;
-                    affiliateWallet.transactions.push({
-                        type: types_1.TransactionType.CREDIT,
-                        amount: walletAffiliateCommission,
-                        purpose: types_1.WalletPurpose.COMMISSION,
-                        reference: `affiliate_${orderNumber}_${Date.now()}`,
-                        description: `Affiliate commission for Order #${orderNumber}`,
-                        relatedOrder: order._id,
-                        status: 'completed',
-                        timestamp: new Date(),
-                    });
-                    await affiliateWallet.save();
-                    await Additional_1.AffiliateLink.findOneAndUpdate({ code: normalizedWalletAffiliateCode }, { $inc: { conversions: 1, totalEarned: walletAffiliateCommission } });
-                    logger_1.logger.info(`✅ Credited ₦${walletAffiliateCommission} affiliate commission for wallet order ${orderNumber}`);
-                }
-                catch (affiliateErr) {
-                    logger_1.logger.error('Error crediting affiliate commission (wallet):', affiliateErr);
-                }
-            }
+            // Points awarded on delivery (not payment) — see completeOrder
+            // Affiliate commission credited on delivery — see completeOrder
             logger_1.logger.info('📦 Shipment will be created when vendor confirms/processes order');
         }
         else {
@@ -991,7 +994,9 @@ class OrderController {
         const subtotal = cart.subtotal;
         const discount = cart.discount;
         const tax = 0;
-        const total = subtotal - discount + totalShippingCost + tax;
+        const baseTotal = subtotal - discount + totalShippingCost + tax;
+        const serviceCharge = isDigitalOnly ? 0 : calculateServiceCharge(baseTotal);
+        const total = baseTotal + serviceCharge;
         // Validate and apply VCredits (separate from wallet cash balance)
         let validVCredits = 0;
         if (vCreditsAmount > 0) {
@@ -1387,7 +1392,7 @@ class OrderController {
                         const affiliatedItem = orderItems.find((item) => item.product.toString() === linkRecord.product.toString());
                         if (affiliatedItem) {
                             const prod = await Product_1.default.findById(linkRecord.product).select('affiliateCommission').lean();
-                            const rate = prod?.affiliateCommission || 5;
+                            const rate = prod?.affiliateCommission || 3;
                             commissionSum = (affiliatedItem.price || 0) * (affiliatedItem.quantity || 1) * (rate / 100);
                         }
                     }
@@ -1400,7 +1405,7 @@ class OrderController {
                                 commissionSum += (item.price || 0) * (item.quantity || 1) * (rate / 100);
                         }
                         if (commissionSum === 0)
-                            commissionSum = subtotal * 0.05;
+                            commissionSum = subtotal * 0.03;
                     }
                     affiliateUserId = linkRecord.user;
                     affiliateCommissionAmount = Math.round(commissionSum * 100) / 100;
@@ -1468,46 +1473,7 @@ class OrderController {
                 });
             }
         }
-        // Step 11: Award points
-        try {
-            const { rewardController } = await Promise.resolve().then(() => __importStar(require('./reward.controller')));
-            await rewardController.awardOrderPoints(order._id.toString());
-            logger_1.logger.info(`✅ Points awarded for order ${orderNumber}`);
-        }
-        catch (error) {
-            logger_1.logger.error('Error awarding points:', error);
-        }
-        // Step 11b: Credit affiliate commission immediately on payment
-        if (order.affiliateUser && order.affiliateCommission) {
-            try {
-                let affiliateWallet = await Additional_1.Wallet.findOne({ user: order.affiliateUser });
-                if (!affiliateWallet) {
-                    affiliateWallet = await Additional_1.Wallet.create({ user: order.affiliateUser });
-                }
-                const commissionAmount = order.affiliateCommission;
-                affiliateWallet.balance += commissionAmount;
-                affiliateWallet.totalEarned += commissionAmount;
-                affiliateWallet.transactions.push({
-                    type: types_1.TransactionType.CREDIT,
-                    amount: commissionAmount,
-                    purpose: types_1.WalletPurpose.COMMISSION,
-                    reference: `affiliate_${order.orderNumber}_${Date.now()}`,
-                    description: `Affiliate commission for Order #${order.orderNumber}`,
-                    relatedOrder: order._id,
-                    status: 'completed',
-                    timestamp: new Date(),
-                });
-                await affiliateWallet.save();
-                // Update AffiliateLink conversions + totalEarned
-                if (snapshotAffiliateCode) {
-                    await Additional_1.AffiliateLink.findOneAndUpdate({ code: snapshotAffiliateCode }, { $inc: { conversions: 1, totalEarned: commissionAmount } });
-                }
-                logger_1.logger.info(`✅ Credited ₦${commissionAmount} affiliate commission immediately for order ${order.orderNumber}`);
-            }
-            catch (affiliateError) {
-                logger_1.logger.error(`Error crediting affiliate commission for order ${order.orderNumber}:`, affiliateError);
-            }
-        }
+        // Points and affiliate commission credited on delivery — see completeOrder
         // Step 12: Send confirmation email
         try {
             await (0, email_1.sendOrderConfirmationEmail)(user.email, order.orderNumber, order.total);
@@ -1845,15 +1811,7 @@ class OrderController {
                 }
                 // ✅ Shipment will be created when vendor updates order status
                 logger_1.logger.info('📦 Shipment will be created when vendor confirms/processes order');
-                // ✅ AWARD POINTS AFTER SUCCESSFUL PAYMENT
-                try {
-                    const { rewardController } = await Promise.resolve().then(() => __importStar(require('./reward.controller')));
-                    await rewardController.awardOrderPoints(order._id.toString());
-                    logger_1.logger.info(`✅ Points awarded for order ${order.orderNumber}`);
-                }
-                catch (error) {
-                    logger_1.logger.error('Error awarding points:', error);
-                }
+                // Points credited on delivery — see completeOrder
                 // Send confirmation email
                 const user = await User_1.default.findById(order.user);
                 if (user) {
@@ -2686,14 +2644,14 @@ class OrderController {
                 const itemTotal = item.price * item.quantity;
                 vendorEarnings.set(vendorId, (vendorEarnings.get(vendorId) || 0) + itemTotal);
             }
-            // Credit each vendor's wallet using their individual commission rate (default 8%)
+            // Credit each vendor's wallet using tiered commission rate
             for (const [vendorId, amount] of vendorEarnings) {
                 let vendorWallet = await Additional_1.Wallet.findOne({ user: vendorId });
                 if (!vendorWallet) {
                     vendorWallet = await Additional_1.Wallet.create({ user: vendorId });
                 }
-                const vendorProfile = await VendorProfile_1.default.findOne({ user: vendorId }).select('commissionRate');
-                const commissionRate = (vendorProfile?.commissionRate ?? 8) / 100;
+                const commissionRatePct = await getVendorCommissionRate(vendorId);
+                const commissionRate = commissionRatePct / 100;
                 const commission = Math.round(amount * commissionRate * 100) / 100;
                 const vendorAmount = Math.round((amount - commission) * 100) / 100;
                 vendorWallet.balance += vendorAmount;
@@ -2735,8 +2693,27 @@ class OrderController {
             }
         }
         catch (walletError) {
-            // Log but don't fail the order completion
             logger_1.logger.error(`Error crediting vendor wallets for order ${order.orderNumber}:`, walletError);
+        }
+        // Award purchase reward points on delivery (1% = 1pt per ₦100 spent)
+        try {
+            const { rewardController } = await Promise.resolve().then(() => __importStar(require('./reward.controller')));
+            await rewardController.awardOrderPoints(order._id.toString());
+            logger_1.logger.info(`✅ Points awarded on delivery for order ${order.orderNumber}`);
+            // Unlock vendor referral points if any vendor is making their first sale
+            const uniqueVendorIds = [...new Set(order.items.map((item) => item.vendor.toString()))];
+            for (const vendorId of uniqueVendorIds) {
+                const vendorProfile = await VendorProfile_1.default.findOne({ user: vendorId });
+                if (vendorProfile && !vendorProfile.referralRewarded && vendorProfile.referredBy) {
+                    await rewardController.unlockVendorReferralPoints(vendorId);
+                    vendorProfile.referralRewarded = true;
+                    await vendorProfile.save();
+                    logger_1.logger.info(`✅ Vendor referral unlocked for vendor ${vendorId}`);
+                }
+            }
+        }
+        catch (error) {
+            logger_1.logger.error('Error awarding points on delivery:', error);
         }
         // Deactivate any conversations tied to this order between the customer and vendors
         try {

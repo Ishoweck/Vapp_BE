@@ -276,7 +276,7 @@ class OAuthController {
         // Check if login is consecutive (yesterday)
         const yesterday = new Date(today);
         yesterday.setDate(yesterday.getDate() - 1);
-        let pointsAwarded = 1;
+        let pointsAwarded = 5;
         let streakBonus = 0;
         let newStreak = 1;
         if (lastLogin && lastLogin.getTime() === yesterday.getTime()) {
@@ -319,7 +319,7 @@ class OAuthController {
             description,
             metadata: {
                 streakDay: newStreak,
-                basePoints: 1,
+                basePoints: 5,
                 bonusPoints: streakBonus,
             },
         });

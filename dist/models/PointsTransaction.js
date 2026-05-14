@@ -1,5 +1,4 @@
 "use strict";
-// models/PointsTransaction.ts - NEW MODEL FOR TRACKING ALL POINT ACTIVITIES
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = require("mongoose");
 const pointsTransactionSchema = new mongoose_1.Schema({
@@ -31,6 +30,18 @@ const pointsTransactionSchema = new mongoose_1.Schema({
         type: String,
         sparse: true,
     },
+    status: {
+        type: String,
+        enum: ['active', 'locked', 'expired'],
+        default: 'active',
+    },
+    expiresAt: {
+        type: Date,
+    },
+    lockedForVendor: {
+        type: mongoose_1.Schema.Types.ObjectId,
+        ref: 'User',
+    },
     metadata: {
         type: mongoose_1.Schema.Types.Mixed,
         default: {},
@@ -38,10 +49,11 @@ const pointsTransactionSchema = new mongoose_1.Schema({
 }, {
     timestamps: true,
 });
-// Indexes for efficient queries
 pointsTransactionSchema.index({ user: 1, createdAt: -1 });
 pointsTransactionSchema.index({ user: 1, activity: 1 });
 pointsTransactionSchema.index({ type: 1, createdAt: -1 });
+pointsTransactionSchema.index({ status: 1, expiresAt: 1 });
+pointsTransactionSchema.index({ lockedForVendor: 1, status: 1 });
 const PointsTransaction = (0, mongoose_1.model)('PointsTransaction', pointsTransactionSchema);
 exports.default = PointsTransaction;
 //# sourceMappingURL=PointsTransaction.js.map

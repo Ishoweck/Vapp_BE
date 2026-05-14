@@ -146,6 +146,27 @@ const vendorProfileSchema = new mongoose_1.Schema({
         twitter: String,
         tiktok: String,
     },
+    referredBy: {
+        type: mongoose_1.Schema.Types.ObjectId,
+        ref: 'User',
+    },
+    referralRewarded: {
+        type: Boolean,
+        default: false,
+    },
+    responseRate: {
+        type: Number,
+        default: 100,
+        min: 0,
+        max: 100,
+    },
+    responseSpeed: {
+        type: Number,
+        default: 100,
+        min: 0,
+        max: 100,
+    },
+    statsComputedAt: Date,
 }, {
     timestamps: true,
 });
