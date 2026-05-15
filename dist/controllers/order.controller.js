@@ -2183,13 +2183,13 @@ class OrderController {
         order.status = types_1.OrderStatus.CANCELLED;
         order.cancelReason = cancelReason;
         await order.save();
-        // Cancel shipments
+        // Cancel shipments — always mark status cancelled; only call ShipBubble if tracked
         if (order.vendorShipments && order.vendorShipments.length > 0) {
             for (const shipment of order.vendorShipments) {
+                shipment.status = 'cancelled';
                 if (shipment.trackingNumber) {
                     try {
                         await shipbubble_service_1.shipBubbleService.cancelShipment(shipment.trackingNumber);
-                        shipment.status = 'cancelled';
                         logger_1.logger.info(`ShipBubble shipment cancelled: ${shipment.trackingNumber}`);
                     }
                     catch (error) {
@@ -2377,35 +2377,41 @@ class OrderController {
         const limit = parseInt(req.query.limit) || 20;
         const skip = (page - 1) * limit;
         const { status } = req.query;
+        // Always fetch by vendor's items; status filter applied per-shipment below
         const query = { 'items.vendor': req.user?.id };
-        if (status)
-            query.status = status;
         const orders = await Order_1.default.find(query)
             .sort({ createdAt: -1 })
-            .skip(skip)
-            .limit(limit)
             .populate('user', 'firstName lastName email')
             .populate('items.product', 'name images');
-        const filteredOrders = orders.map(order => {
+        const mapped = orders.map(order => {
             const vendorItems = order.items.filter(item => item.vendor.toString() === req.user?.id);
             const vendorShipment = order.vendorShipments?.find((shipment) => shipment.vendor.toString() === req.user?.id);
-            // Calculate total for this vendor's items only
+            // Effective status: vendorShipment.status if present, else order.status
+            // order.status=cancelled always wins for whole-order cancels
+            const effectiveStatus = order.status === 'cancelled'
+                ? 'cancelled'
+                : (vendorShipment?.status || order.status);
             const vendorTotal = vendorItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
             const vendorShippingCost = vendorShipment?.shippingCost ?? 0;
             return {
                 ...order.toObject(),
                 items: vendorItems,
                 vendorShipment,
+                effectiveStatus,
                 vendorTotal,
                 vendorShippingCost,
-                // Override the full-order total so vendor-facing views show the right amount
                 total: vendorTotal + vendorShippingCost,
             };
         });
-        const total = await Order_1.default.countDocuments(query);
+        // Filter by effective per-vendor status if requested
+        const filteredOrders = status
+            ? mapped.filter(o => o.effectiveStatus === status)
+            : mapped;
+        const total = filteredOrders.length;
+        const pagedOrders = filteredOrders.slice(skip, skip + limit);
         res.json({
             success: true,
-            data: { orders: filteredOrders },
+            data: { orders: pagedOrders },
             meta: {
                 page,
                 limit,

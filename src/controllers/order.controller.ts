@@ -2775,17 +2775,15 @@
       const skip = (page - 1) * limit;
       const { status } = req.query;
 
+      // Always fetch by vendor's items; status filter applied per-shipment below
       const query: any = { 'items.vendor': req.user?.id };
-      if (status) query.status = status;
 
       const orders = await Order.find(query)
         .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit)
         .populate('user', 'firstName lastName email')
         .populate('items.product', 'name images');
 
-      const filteredOrders = orders.map(order => {
+      const mapped = orders.map(order => {
         const vendorItems = order.items.filter(
           item => item.vendor.toString() === req.user?.id
         );
@@ -2794,7 +2792,12 @@
           (shipment: any) => shipment.vendor.toString() === req.user?.id
         );
 
-        // Calculate total for this vendor's items only
+        // Effective status: vendorShipment.status if present, else order.status
+        // order.status=cancelled always wins for whole-order cancels
+        const effectiveStatus = order.status === 'cancelled'
+          ? 'cancelled'
+          : (vendorShipment?.status || order.status);
+
         const vendorTotal = vendorItems.reduce(
           (sum: number, item: any) => sum + item.price * item.quantity, 0
         );
@@ -2804,18 +2807,24 @@
           ...order.toObject(),
           items: vendorItems,
           vendorShipment,
+          effectiveStatus,
           vendorTotal,
           vendorShippingCost,
-          // Override the full-order total so vendor-facing views show the right amount
           total: vendorTotal + vendorShippingCost,
         };
       });
 
-      const total = await Order.countDocuments(query);
+      // Filter by effective per-vendor status if requested
+      const filteredOrders = status
+        ? mapped.filter(o => o.effectiveStatus === status)
+        : mapped;
+
+      const total = filteredOrders.length;
+      const pagedOrders = filteredOrders.slice(skip, skip + limit);
 
       res.json({
         success: true,
-        data: { orders: filteredOrders },
+        data: { orders: pagedOrders },
         meta: {
           page,
           limit,
