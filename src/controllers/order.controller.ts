@@ -733,12 +733,13 @@
           const physicalItems = group.items.filter(item => item.isPhysical);
           if (physicalItems.length === 0) continue;
           const vd = vendorDeliveries.find((v: any) => v.vendorId === group.vendorId);
-          const shippingCost = vd?.price || this.getDefaultRate(deliveryType);
+          // Use ?? not || so a price of 0 (digital bundled) is respected
+          const shippingCost = vd != null ? (vd.price ?? 0) : this.getDefaultRate(deliveryType);
           totalShippingCost += shippingCost;
           vendorShipments.push({
             vendor: group.vendorId,
             vendorName: group.vendorName,
-            items: group.items.map(item => item.productId),
+            items: group.items.filter(item => item.isPhysical).map(item => item.productId),
             origin: {
               street: group.vendorAddress.street || '',
               city: group.vendorAddress.city,
@@ -1466,12 +1467,12 @@
             const physicalItems = group.items.filter(item => item.isPhysical);
             if (physicalItems.length === 0) continue;
             const vd = snapshotVendorDeliveries.find((v: any) => v.vendorId === group.vendorId);
-            const shippingCost = vd?.price || this.getDefaultRate(deliveryType);
+            const shippingCost = vd != null ? (vd.price ?? 0) : this.getDefaultRate(deliveryType);
             totalShippingCost += shippingCost;
             vendorShipments.push({
               vendor: group.vendorId,
               vendorName: group.vendorName,
-              items: group.items.map(item => item.productId),
+              items: group.items.filter(item => item.isPhysical).map(item => item.productId),
               origin: {
                 street: group.vendorAddress.street || '',
                 city: group.vendorAddress.city,
