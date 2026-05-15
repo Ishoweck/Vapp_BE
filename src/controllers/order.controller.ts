@@ -2546,13 +2546,13 @@
       (order as any).cancelReason = cancelReason;
       await order.save();
 
-      // Cancel shipments
+      // Cancel shipments — always mark status cancelled; only call ShipBubble if tracked
       if ((order as any).vendorShipments && (order as any).vendorShipments.length > 0) {
         for (const shipment of (order as any).vendorShipments) {
+          shipment.status = 'cancelled';
           if (shipment.trackingNumber) {
             try {
               await shipBubbleService.cancelShipment(shipment.trackingNumber);
-              shipment.status = 'cancelled';
               logger.info(`ShipBubble shipment cancelled: ${shipment.trackingNumber}`);
             } catch (error) {
               logger.error(`Error cancelling ShipBubble shipment ${shipment.trackingNumber}:`, error);
