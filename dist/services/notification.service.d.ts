@@ -63,6 +63,12 @@ declare class NotificationService {
      * Notify a user when they claim a challenge reward
      */
     challengeRewardClaimed(userId: string, challengeId: string, challengeTitle: string, rewardType: string, rewardValue: number): Promise<void>;
+    /**
+     * Notify buyers who have a product in their cart when stock hits 0 or drops to ≤5.
+     * Also emits a dedicated `product_stock_update` socket event so the cart UI
+     * can react in real time without waiting for a screen refresh.
+     */
+    productStockAlert(userIds: string[], productId: string, productName: string, newQuantity: number): Promise<void>;
     vendorSaleCompleted(vendorId: string, orderNumber: string, amount: number, commission: number): Promise<void>;
 }
 export declare const notificationService: NotificationService;

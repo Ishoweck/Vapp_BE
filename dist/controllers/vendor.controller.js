@@ -723,6 +723,7 @@ class VendorController {
                 },
                 profile: {
                     verificationStatus: vendorProfile.verificationStatus,
+                    rejectionReason: vendorProfile.rejectionReason || null,
                     verificationProgress,
                     isActive: vendorProfile.isActive,
                     hasPayoutDetails: !!vendorProfile.payoutDetails,
@@ -934,12 +935,14 @@ class VendorController {
         if (userId) {
             isFollowing = vendorProfile.followers?.some(id => id.toString() === userId) || false;
         }
-        const [products, productCount, disputeCount] = await Promise.all([
+        const [products, productCount, disputeCount, allProductSales] = await Promise.all([
             Product_1.default.find({ vendor: vendorId, status: 'active' })
                 .select('name slug price images averageRating totalReviews'),
             Product_1.default.countDocuments({ vendor: vendorId, status: 'active' }),
             Dispute_1.default.countDocuments({ vendor: vendorId }),
+            Product_1.default.find({ vendor: vendorId }).select('totalSales'),
         ]);
+        const computedTotalSales = allProductSales.reduce((sum, p) => sum + (p.totalSales || 0), 0);
         // Recompute response stats if cache is older than STATS_CACHE_HOURS
         const cacheExpiry = new Date(Date.now() - STATS_CACHE_HOURS * 60 * 60 * 1000);
         const statsStale = !vendorProfile.statsComputedAt || vendorProfile.statsComputedAt < cacheExpiry;
@@ -968,7 +971,7 @@ class VendorController {
                     businessAddress: vendorProfile.businessAddress,
                     averageRating: vendorProfile.averageRating,
                     totalReviews: vendorProfile.totalReviews,
-                    totalSales: vendorProfile.totalSales,
+                    totalSales: computedTotalSales,
                     totalOrders: vendorProfile.totalOrders,
                     productCount,
                     disputeCount,
@@ -1054,9 +1057,9 @@ exports.vendorController = new VendorController();
  * Vendor records who referred them (one-time, before first sale)
  */
 const setVendorReferrer = async (req, res) => {
-    const { referrerId } = req.body;
-    if (!referrerId) {
-        res.status(400).json({ success: false, message: 'referrerId is required' });
+    const { referrerId, affiliateCode } = req.body;
+    if (!referrerId && !affiliateCode) {
+        res.status(400).json({ success: false, message: 'referrerId or affiliateCode is required' });
         return;
     }
     const vendorProfile = await VendorProfile_1.default.findOne({ user: req.user?.id });
@@ -1068,19 +1071,30 @@ const setVendorReferrer = async (req, res) => {
         res.status(400).json({ success: false, message: 'Referrer already set' });
         return;
     }
-    if (referrerId === req.user?.id) {
+    // Resolve referrer by affiliate code if referrerId not provided
+    let resolvedReferrerId = referrerId;
+    if (!resolvedReferrerId && affiliateCode) {
+        const referrerByCode = await User_1.default.findOne({ affiliateCode: affiliateCode.toUpperCase() });
+        if (!referrerByCode) {
+            res.status(404).json({ success: false, message: 'Invalid affiliate code' });
+            return;
+        }
+        resolvedReferrerId = referrerByCode._id.toString();
+    }
+    if (resolvedReferrerId === req.user?.id) {
         res.status(400).json({ success: false, message: 'You cannot refer yourself' });
         return;
     }
-    const referrer = await User_1.default.findById(referrerId);
+    const referrer = await User_1.default.findById(resolvedReferrerId);
     if (!referrer) {
         res.status(404).json({ success: false, message: 'Referrer not found' });
         return;
     }
-    vendorProfile.referredBy = referrerId;
+    const referrerId_final = resolvedReferrerId;
+    vendorProfile.referredBy = referrerId_final;
     await vendorProfile.save();
     const { rewardController } = await Promise.resolve().then(() => __importStar(require('./reward.controller')));
-    await rewardController.awardVendorReferralPoints(referrerId, req.user.id);
+    await rewardController.awardVendorReferralPoints(referrerId_final, req.user.id);
     res.json({
         success: true,
         message: 'Referrer recorded. They will receive 500 points when you make your first sale.',

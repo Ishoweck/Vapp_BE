@@ -858,6 +858,9 @@ export const getAllVendors = asyncHandler(
 
     const filter: any = {};
     if (status) filter.verificationStatus = status;
+    if (req.query.hasKyc === 'true') {
+      filter['kycDocuments.0'] = { $exists: true };
+    }
     if (search) {
       filter.$or = [
         { businessName: { $regex: search, $options: 'i' } },
@@ -880,6 +883,25 @@ export const getAllVendors = asyncHandler(
       success: true,
       data: vendors,
       meta: getPaginationMeta(total, pageNum, limitNum),
+    });
+  }
+);
+
+/**
+ * POST /admin/vendors/fix-commission-rates
+ * One-time migration: set all non-premium vendors with legacy 5% default to 8%
+ */
+export const fixLegacyCommissionRates = asyncHandler(
+  async (_req: AuthRequest, res: Response<ApiResponse>): Promise<void> => {
+    const result = await VendorProfile.updateMany(
+      { isPremium: false, commissionRate: 5 },
+      { $set: { commissionRate: 8 } }
+    );
+
+    res.json({
+      success: true,
+      message: `Fixed ${result.modifiedCount} vendor commission rates from 5% to 8%`,
+      data: { modifiedCount: result.modifiedCount },
     });
   }
 );
@@ -2667,31 +2689,87 @@ export const approveAccountDeletion = asyncHandler(
   async (req: AuthRequest, res: Response<ApiResponse>): Promise<void> => {
     const { id } = req.params;
 
-    const request = await AccountDeletionRequest.findById(id);
+    const request = await AccountDeletionRequest.findById(id).populate('user');
     if (!request) {
       res.status(404).json({ success: false, message: 'Request not found' });
       return;
     }
 
     if (request.status !== 'pending') {
-      res.status(400).json({
-        success: false,
-        message: `Request is already ${request.status}`,
-      });
+      res.status(400).json({ success: false, message: `Request is already ${request.status}` });
       return;
     }
 
+    const user = request.user as any;
+    if (!user) {
+      res.status(404).json({ success: false, message: 'User not found' });
+      return;
+    }
+
+    // Block deletion if vendor still has active orders
+    if (user.role === 'vendor') {
+      const pendingOrders = await Order.countDocuments({
+        'items.vendor': user._id,
+        status: { $in: ['pending', 'confirmed', 'processing', 'shipped', 'in_transit'] },
+      });
+      if (pendingOrders > 0) {
+        res.status(400).json({
+          success: false,
+          message: `Cannot delete account — ${pendingOrders} active order(s) must be completed or cancelled first.`,
+        });
+        return;
+      }
+    }
+
+    // 1. Notify + force-logout the user BEFORE deleting so the socket can still deliver
+    try {
+      await notificationService.send({
+        userId: user._id.toString(),
+        type: NotificationType.ACCOUNT,
+        title: 'Account Permanently Deleted',
+        message: 'Your account deletion request has been approved. Your account and all associated data have been permanently removed. Thank you for using VendorSpot.',
+      });
+    } catch (_) {
+      // Non-critical — don't block the deletion
+    }
+
+    // Kick the user off the app via socket
+    try {
+      const io = (req as any).app.get('io');
+      if (io) {
+        io.to(`user_${user._id}`).emit('force_logout', { reason: 'account_deleted' });
+      }
+    } catch (_) {}
+
+    // 2. Vendor-specific cleanup
+    if (user.role === 'vendor') {
+      await Product.updateMany({ vendor: user._id }, { status: 'inactive' });
+      await VendorProfile.findOneAndDelete({ user: user._id });
+    }
+
+    // 3. Anonymize completed orders (preserve records, strip personal info)
+    await Order.updateMany(
+      { user: user._id },
+      {
+        $set: {
+          'shippingAddress.fullName': 'Deleted User',
+          'shippingAddress.phone': 'N/A',
+        },
+      }
+    );
+
+    // 4. Hard-delete the user — frees the email for re-registration
+    await User.findByIdAndDelete(user._id);
+
+    // 5. Mark request as approved
     request.status = 'approved';
     request.processedBy = new mongoose.Types.ObjectId(req.user!.id);
     request.processedAt = new Date();
     await request.save();
 
-    // Deactivate the user
-    await User.findByIdAndUpdate(request.user, { status: UserStatus.INACTIVE });
-
     res.json({
       success: true,
-      message: 'Account deletion request approved',
+      message: 'Account permanently deleted',
     });
   }
 );

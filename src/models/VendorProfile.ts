@@ -45,6 +45,7 @@ export interface IVendorProfile extends Document {
   responseRate: number;
   responseSpeed: number;
   statsComputedAt?: Date;
+  rejectionReason?: string;
 }
 
 const vendorProfileSchema = new Schema<IVendorProfile>({
@@ -118,7 +119,7 @@ const vendorProfileSchema = new Schema<IVendorProfile>({
     },
   commissionRate: {
     type: Number,
-    default: 5,
+    default: 8,
     min: 0,
     max: 100,
   },

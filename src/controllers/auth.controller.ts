@@ -59,7 +59,9 @@ export class AuthController {
     }
 
     // Send OTP email
-    console.log(otpCode);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`\n🔑 [DEV] Registration OTP for ${email}: ${otpCode}\n`);
+    }
     await sendOTPEmail(email, otpCode);
 
     res.status(201).json({
@@ -241,7 +243,9 @@ async verifyEmail(req: AuthRequest, res: Response<ApiResponse>): Promise<void> {
     await user.save();
 
     // Send OTP email
-    console.log(`🔑 Resend OTP for ${email}: ${otpCode}`);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`\n🔑 [DEV] Resend OTP for ${email}: ${otpCode}\n`);
+    }
     await sendOTPEmail(email, otpCode);
 
     res.json({
@@ -391,9 +395,18 @@ private async awardDailyLoginPoints(user: any): Promise<void> {
     },
   });
 
-  // Log the points award
+  // Send notification for the daily login points
+  try {
+    const { notificationService } = await import('../services/notification.service');
+    const reason = streakBonus > 0
+      ? `daily login (${newStreak}-day streak bonus!)`
+      : 'daily login';
+    await notificationService.pointsEarned(user._id.toString(), pointsAwarded, reason);
+  } catch (err) {
+    // Non-critical — don't block login
+  }
+
   console.log(`✅ Daily login points awarded: ${pointsAwarded} to user ${user.email} (Streak: ${newStreak})`);
-  
   if (streakBonus > 0) {
     console.log(`🎉 Streak bonus: ${streakBonus} points for ${newStreak}-day streak!`);
   }
@@ -426,7 +439,9 @@ async forgotPassword(req: AuthRequest, res: Response<ApiResponse>): Promise<void
     // Send reset email with OTP
     await sendPasswordResetEmail(email, otpCode);
 
-    console.log(`🔐 Password reset OTP generated for ${email}: ${otpCode}`);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`\n🔐 [DEV] Password reset OTP for ${email}: ${otpCode}\n`);
+    }
 
     res.json({
       success: true,

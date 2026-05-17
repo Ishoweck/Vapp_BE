@@ -7,6 +7,8 @@ import mongoose, { Schema, Document, Types } from 'mongoose';
 
 export interface IAccountDeletionRequest extends Document {
   user: Types.ObjectId;
+  userEmail?: string;
+  userFullName?: string;
   reason: string;
   additionalDetails?: string;
   status: 'pending' | 'approved' | 'rejected' | 'cancelled';
@@ -28,6 +30,8 @@ const accountDeletionRequestSchema = new Schema<IAccountDeletionRequest>(
       required: true,
       index: true,
     },
+    userEmail: { type: String },
+    userFullName: { type: String },
     reason: {
       type: String,
       required: true,

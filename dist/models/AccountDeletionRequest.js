@@ -45,6 +45,8 @@ const accountDeletionRequestSchema = new mongoose_1.Schema({
         required: true,
         index: true,
     },
+    userEmail: { type: String },
+    userFullName: { type: String },
     reason: {
         type: String,
         required: true,

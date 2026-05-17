@@ -36,8 +36,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getNotificationHistory = exports.broadcastNotification = exports.deleteCategory = exports.updateCategory = exports.createCategory = exports.getAllCategories = exports.deleteCoupon = exports.updateCoupon = exports.createCoupon = exports.getAllCoupons = exports.addDisputeMessage = exports.resolveDispute = exports.markDisputeUnderReview = exports.getDisputeDetails = exports.getAllDisputes = exports.deleteReview = exports.updateReviewStatus = exports.getAllReviews = exports.processWithdrawal = exports.getPendingWithdrawals = exports.getAllTransactions = exports.getFinancialOverview = exports.processRefund = exports.updateOrderStatus = exports.getOrderDetails = exports.getAllOrders = exports.deleteProduct = exports.toggleProductFeatured = exports.updateProductStatus = exports.getProductDetails = exports.getAllProducts = exports.updateVendorCommission = exports.toggleVendorPremium = exports.toggleVendorStatus = exports.verifyVendor = exports.getVendorDetails = exports.getAllVendors = exports.deleteUser = exports.updateUserRole = exports.updateUserStatus = exports.getUserDetails = exports.getAllUsers = exports.removeAdmin = exports.updateAdminRole = exports.getAllAdmins = exports.createAdmin = exports.getOrderAnalytics = exports.getUserAnalytics = exports.getRevenueAnalytics = exports.getDashboard = void 0;
-exports.updateAppVersionConfig = exports.getAppVersionConfig = exports.globalSearch = exports.getActivityLog = exports.getProductReport = exports.getVendorReport = exports.getSalesReport = exports.deleteChallenge = exports.updateChallenge = exports.createChallenge = exports.getAllChallenges = exports.toggleAffiliateStatus = exports.getAllAffiliates = exports.rejectAccountDeletion = exports.approveAccountDeletion = exports.getAccountDeletionRequests = void 0;
+exports.broadcastNotification = exports.deleteCategory = exports.updateCategory = exports.createCategory = exports.getAllCategories = exports.deleteCoupon = exports.updateCoupon = exports.createCoupon = exports.getAllCoupons = exports.addDisputeMessage = exports.resolveDispute = exports.markDisputeUnderReview = exports.getDisputeDetails = exports.getAllDisputes = exports.deleteReview = exports.updateReviewStatus = exports.getAllReviews = exports.processWithdrawal = exports.getPendingWithdrawals = exports.getAllTransactions = exports.getFinancialOverview = exports.processRefund = exports.updateOrderStatus = exports.getOrderDetails = exports.getAllOrders = exports.deleteProduct = exports.toggleProductFeatured = exports.updateProductStatus = exports.getProductDetails = exports.getAllProducts = exports.updateVendorCommission = exports.toggleVendorPremium = exports.toggleVendorStatus = exports.verifyVendor = exports.getVendorDetails = exports.fixLegacyCommissionRates = exports.getAllVendors = exports.deleteUser = exports.updateUserRole = exports.updateUserStatus = exports.getUserDetails = exports.getAllUsers = exports.removeAdmin = exports.updateAdminRole = exports.getAllAdmins = exports.createAdmin = exports.getOrderAnalytics = exports.getUserAnalytics = exports.getRevenueAnalytics = exports.getDashboard = void 0;
+exports.updateAppVersionConfig = exports.getAppVersionConfig = exports.globalSearch = exports.getActivityLog = exports.getProductReport = exports.getVendorReport = exports.getSalesReport = exports.deleteChallenge = exports.updateChallenge = exports.createChallenge = exports.getAllChallenges = exports.toggleAffiliateStatus = exports.getAllAffiliates = exports.rejectAccountDeletion = exports.approveAccountDeletion = exports.getAccountDeletionRequests = exports.getNotificationHistory = void 0;
 const mongoose_1 = __importDefault(require("mongoose"));
 const types_1 = require("../types");
 const User_1 = __importDefault(require("../models/User"));
@@ -726,6 +726,9 @@ exports.getAllVendors = (0, ayncHandler_1.asyncHandler)(async (req, res) => {
     const filter = {};
     if (status)
         filter.verificationStatus = status;
+    if (req.query.hasKyc === 'true') {
+        filter['kycDocuments.0'] = { $exists: true };
+    }
     if (search) {
         filter.$or = [
             { businessName: { $regex: search, $options: 'i' } },
@@ -745,6 +748,18 @@ exports.getAllVendors = (0, ayncHandler_1.asyncHandler)(async (req, res) => {
         success: true,
         data: vendors,
         meta: (0, helpers_1.getPaginationMeta)(total, pageNum, limitNum),
+    });
+});
+/**
+ * POST /admin/vendors/fix-commission-rates
+ * One-time migration: set all non-premium vendors with legacy 5% default to 8%
+ */
+exports.fixLegacyCommissionRates = (0, ayncHandler_1.asyncHandler)(async (_req, res) => {
+    const result = await VendorProfile_1.default.updateMany({ isPremium: false, commissionRate: 5 }, { $set: { commissionRate: 8 } });
+    res.json({
+        success: true,
+        message: `Fixed ${result.modifiedCount} vendor commission rates from 5% to 8%`,
+        data: { modifiedCount: result.modifiedCount },
     });
 });
 /**
@@ -2172,27 +2187,76 @@ exports.getAccountDeletionRequests = (0, ayncHandler_1.asyncHandler)(async (req,
  */
 exports.approveAccountDeletion = (0, ayncHandler_1.asyncHandler)(async (req, res) => {
     const { id } = req.params;
-    const request = await AccountDeletionRequest_1.default.findById(id);
+    const request = await AccountDeletionRequest_1.default.findById(id).populate('user');
     if (!request) {
         res.status(404).json({ success: false, message: 'Request not found' });
         return;
     }
     if (request.status !== 'pending') {
-        res.status(400).json({
-            success: false,
-            message: `Request is already ${request.status}`,
-        });
+        res.status(400).json({ success: false, message: `Request is already ${request.status}` });
         return;
     }
+    const user = request.user;
+    if (!user) {
+        res.status(404).json({ success: false, message: 'User not found' });
+        return;
+    }
+    // Block deletion if vendor still has active orders
+    if (user.role === 'vendor') {
+        const pendingOrders = await Order_1.default.countDocuments({
+            'items.vendor': user._id,
+            status: { $in: ['pending', 'confirmed', 'processing', 'shipped', 'in_transit'] },
+        });
+        if (pendingOrders > 0) {
+            res.status(400).json({
+                success: false,
+                message: `Cannot delete account — ${pendingOrders} active order(s) must be completed or cancelled first.`,
+            });
+            return;
+        }
+    }
+    // 1. Notify + force-logout the user BEFORE deleting so the socket can still deliver
+    try {
+        await notification_service_1.notificationService.send({
+            userId: user._id.toString(),
+            type: types_1.NotificationType.ACCOUNT,
+            title: 'Account Permanently Deleted',
+            message: 'Your account deletion request has been approved. Your account and all associated data have been permanently removed. Thank you for using VendorSpot.',
+        });
+    }
+    catch (_) {
+        // Non-critical — don't block the deletion
+    }
+    // Kick the user off the app via socket
+    try {
+        const io = req.app.get('io');
+        if (io) {
+            io.to(`user_${user._id}`).emit('force_logout', { reason: 'account_deleted' });
+        }
+    }
+    catch (_) { }
+    // 2. Vendor-specific cleanup
+    if (user.role === 'vendor') {
+        await Product_1.default.updateMany({ vendor: user._id }, { status: 'inactive' });
+        await VendorProfile_1.default.findOneAndDelete({ user: user._id });
+    }
+    // 3. Anonymize completed orders (preserve records, strip personal info)
+    await Order_1.default.updateMany({ user: user._id }, {
+        $set: {
+            'shippingAddress.fullName': 'Deleted User',
+            'shippingAddress.phone': 'N/A',
+        },
+    });
+    // 4. Hard-delete the user — frees the email for re-registration
+    await User_1.default.findByIdAndDelete(user._id);
+    // 5. Mark request as approved
     request.status = 'approved';
     request.processedBy = new mongoose_1.default.Types.ObjectId(req.user.id);
     request.processedAt = new Date();
     await request.save();
-    // Deactivate the user
-    await User_1.default.findByIdAndUpdate(request.user, { status: types_1.UserStatus.INACTIVE });
     res.json({
         success: true,
-        message: 'Account deletion request approved',
+        message: 'Account permanently deleted',
     });
 });
 /**

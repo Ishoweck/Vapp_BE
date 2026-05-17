@@ -547,6 +547,40 @@ class NotificationService {
         });
     }
     // ================================================================
+    // STOCK ALERT NOTIFICATIONS
+    // ================================================================
+    /**
+     * Notify buyers who have a product in their cart when stock hits 0 or drops to ≤5.
+     * Also emits a dedicated `product_stock_update` socket event so the cart UI
+     * can react in real time without waiting for a screen refresh.
+     */
+    async productStockAlert(userIds, productId, productName, newQuantity) {
+        if (userIds.length === 0)
+            return;
+        const isOutOfStock = newQuantity === 0;
+        await this.sendToMany({
+            userIds,
+            type: types_1.NotificationType.PROMOTION,
+            title: isOutOfStock ? 'Item Out of Stock' : 'Almost Gone!',
+            message: isOutOfStock
+                ? `"${productName}" in your cart just went out of stock. Remove it or check back later.`
+                : `Hurry! Only ${newQuantity} left of "${productName}" in your cart — purchase while you can!`,
+            data: { productId, productName, stock: newQuantity, event: isOutOfStock ? 'out_of_stock' : 'low_stock' },
+            link: `/products/${productId}`,
+        });
+        // Dedicated real-time event so CartScreen can update badges instantly
+        if (ioInstance) {
+            for (const userId of userIds) {
+                try {
+                    ioInstance.to(`user_${userId}`).emit('product_stock_update', { productId, newQuantity });
+                }
+                catch {
+                    // Non-critical
+                }
+            }
+        }
+    }
+    // ================================================================
     // VENDOR SALES NOTIFICATION
     // ================================================================
     async vendorSaleCompleted(vendorId, orderNumber, amount, commission) {

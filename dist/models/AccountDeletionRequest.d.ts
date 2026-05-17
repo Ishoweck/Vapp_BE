@@ -1,6 +1,8 @@
 import mongoose, { Document, Types } from 'mongoose';
 export interface IAccountDeletionRequest extends Document {
     user: Types.ObjectId;
+    userEmail?: string;
+    userFullName?: string;
     reason: string;
     additionalDetails?: string;
     status: 'pending' | 'approved' | 'rejected' | 'cancelled';

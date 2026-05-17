@@ -4,7 +4,7 @@
 // ============================================================
 
 import { Response } from 'express';
-import { AuthRequest, ApiResponse } from '../types';
+import { AuthRequest, ApiResponse, NotificationType } from '../types';
 import AccountDeletionRequest from '../models/AccountDeletionRequest';
 import User from '../models/User';
 import VendorProfile from '../models/VendorProfile';
@@ -12,6 +12,7 @@ import Product from '../models/Product';
 import Order from '../models/Order';
 import { AppError } from '../middleware/error';
 import { logger } from '../utils/logger';
+import { notificationService } from '../services/notification.service';
 
 export class AccountDeletionController {
   /**
@@ -43,6 +44,8 @@ export class AccountDeletionController {
 
     const deletionRequest = await AccountDeletionRequest.create({
       user: userId,
+      userEmail: user.email,
+      userFullName: `${user.firstName} ${user.lastName}`,
       reason,
       additionalDetails,
       userRole: user.role,
@@ -175,10 +178,25 @@ export class AccountDeletionController {
 
     const total = await AccountDeletionRequest.countDocuments(filter);
 
+    // Normalize: if user was hard-deleted, fall back to stored userEmail/userFullName
+    const normalized = deletionRequests.map((req: any) => {
+      const obj = req.toObject ? req.toObject() : { ...req };
+      if (!obj.user) {
+        obj.user = {
+          _id: null,
+          firstName: obj.userFullName?.split(' ')[0] || 'Deleted',
+          lastName: obj.userFullName?.split(' ').slice(1).join(' ') || 'User',
+          email: obj.userEmail || '(account deleted)',
+          role: obj.userRole,
+        };
+      }
+      return obj;
+    });
+
     res.json({
       success: true,
       data: {
-        deletionRequests,
+        deletionRequests: normalized,
       },
       meta: {
         page,
@@ -257,7 +275,22 @@ export class AccountDeletionController {
       // 3. Delete user account
       await User.findByIdAndDelete(user._id);
 
-      // 4. Update deletion request
+      // 4. Notify all admins about the deletion
+      const admins = await User.find({
+        role: { $in: ['admin', 'super_admin', 'financial_admin'] },
+      }).select('_id');
+      const adminIds = admins.map((a: any) => a._id.toString());
+      if (adminIds.length > 0) {
+        await notificationService.sendToMany({
+          userIds: adminIds,
+          type: NotificationType.ACCOUNT,
+          title: 'Account Deleted',
+          message: `Account for ${user.firstName} ${user.lastName} (${user.email}, ${user.role}) has been permanently deleted.`,
+          data: { deletedUserEmail: user.email, deletedUserRole: user.role },
+        });
+      }
+
+      // 5. Update deletion request
       deletionRequest.status = 'approved';
       deletionRequest.processedBy = adminId as any;
       deletionRequest.processedAt = new Date();

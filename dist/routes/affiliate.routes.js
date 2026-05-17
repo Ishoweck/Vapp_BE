@@ -25,6 +25,8 @@ router.get('/dashboard', (0, error_1.asyncHandler)(affiliate_controller_1.affili
 router.get('/earnings', (0, error_1.asyncHandler)(affiliate_controller_1.affiliateController.getAffiliateEarnings.bind(affiliate_controller_1.affiliateController)));
 // Leaderboard
 router.get('/leaderboard', (0, error_1.asyncHandler)(affiliate_controller_1.affiliateController.getAffiliateLeaderboard.bind(affiliate_controller_1.affiliateController)));
+// Referred vendors history
+router.get('/referred-vendors', (0, error_1.asyncHandler)(affiliate_controller_1.affiliateController.getReferredVendors.bind(affiliate_controller_1.affiliateController)));
 // Admin routes
 router.get('/admin/all', (0, auth_1.authorize)(types_1.UserRole.ADMIN, types_1.UserRole.SUPER_ADMIN), (0, error_1.asyncHandler)(affiliate_controller_1.affiliateController.getAllAffiliates.bind(affiliate_controller_1.affiliateController)));
 exports.default = router;

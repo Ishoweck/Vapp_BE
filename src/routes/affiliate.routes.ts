@@ -56,6 +56,12 @@ router.get(
   asyncHandler(affiliateController.getAffiliateLeaderboard.bind(affiliateController))
 );
 
+// Referred vendors history
+router.get(
+  '/referred-vendors',
+  asyncHandler(affiliateController.getReferredVendors.bind(affiliateController))
+);
+
 // Admin routes
 router.get(
   '/admin/all',

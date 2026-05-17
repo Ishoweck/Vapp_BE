@@ -36,6 +36,10 @@ export declare class AffiliateController {
      * Get affiliate leaderboard
      */
     getAffiliateLeaderboard(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
+    /**
+     * Get vendors referred by the current affiliate user
+     */
+    getReferredVendors(req: AuthRequest, res: Response<ApiResponse>): Promise<void>;
 }
 export declare const affiliateController: AffiliateController;
 //# sourceMappingURL=affiliate.controller.d.ts.map

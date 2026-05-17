@@ -105,7 +105,7 @@ const vendorProfileSchema = new mongoose_1.Schema({
     },
     commissionRate: {
         type: Number,
-        default: 5,
+        default: 8,
         min: 0,
         max: 100,
     },

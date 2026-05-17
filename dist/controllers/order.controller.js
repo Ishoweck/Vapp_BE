@@ -68,24 +68,65 @@ function calculateServiceCharge(orderTotal) {
 }
 /** Tiered platform fee based on vendor's current-month sales volume */
 async function getVendorCommissionRate(vendorId) {
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const result = await Order_1.default.aggregate([
-        {
-            $match: {
-                'items.vendor': new (require('mongoose').Types.ObjectId)(vendorId),
-                status: { $in: ['delivered', 'completed'] },
-                createdAt: { $gte: monthStart },
-            },
-        },
-        { $group: { _id: null, monthlyVolume: { $sum: '$total' } } },
-    ]);
-    const monthlyVolume = result[0]?.monthlyVolume || 0;
-    if (monthlyVolume >= 2000000)
-        return 6;
-    if (monthlyVolume >= 500000)
-        return 7;
-    return 8;
+    const vendorProfile = await VendorProfile_1.default.findOne({ user: vendorId }).select('isPremium commissionRate');
+    if (!vendorProfile)
+        return 8;
+    if (vendorProfile.isPremium)
+        return 5;
+    // Treat legacy 5% default as unconfigured — use 8%
+    const rate = vendorProfile.commissionRate ?? 8;
+    return rate === 5 ? 8 : rate;
+}
+/**
+ * Notify the vendor AND any buyers who have the product in their cart when
+ * stock crosses a threshold. Only fires when a threshold is first crossed
+ * so nobody gets spammed on every subsequent sale.
+ *
+ * Vendor threshold: product's own lowStockThreshold (configurable per product)
+ * Buyer threshold:  hardcoded 5 (as requested)
+ */
+async function notifyCartUsersAboutStock(productId, productName, prevQuantity, soldQuantity, buyerUserId, vendorId, lowStockThreshold) {
+    const newQuantity = Math.max(0, prevQuantity - soldQuantity);
+    // --- Vendor notification (use their configured threshold) ---
+    const vendorCrossedOutOfStock = newQuantity === 0 && prevQuantity > 0;
+    const vendorCrossedLowStock = newQuantity > 0 && newQuantity <= lowStockThreshold && prevQuantity > lowStockThreshold;
+    if (vendorCrossedOutOfStock || vendorCrossedLowStock) {
+        try {
+            await notification_service_1.notificationService.send({
+                userId: vendorId,
+                type: types_1.NotificationType.SYSTEM,
+                title: vendorCrossedOutOfStock ? 'Product Out of Stock' : 'Low Stock Alert',
+                message: vendorCrossedOutOfStock
+                    ? `"${productName}" is now out of stock. Restock it to keep selling.`
+                    : `"${productName}" is running low — only ${newQuantity} unit${newQuantity === 1 ? '' : 's'} left (threshold: ${lowStockThreshold}).`,
+                data: { productId: productId.toString(), productName, stock: newQuantity },
+                link: `/vendor/products`,
+            });
+        }
+        catch (err) {
+            logger_1.logger.warn('Vendor stock notification failed (non-critical):', err);
+        }
+    }
+    // --- Buyer (cart) notifications (hardcoded threshold of 5 as requested) ---
+    const buyerCrossedOutOfStock = newQuantity === 0 && prevQuantity > 0;
+    const buyerCrossedLowStock = newQuantity > 0 && newQuantity <= 5 && prevQuantity > 5;
+    if (!buyerCrossedOutOfStock && !buyerCrossedLowStock)
+        return;
+    try {
+        const carts = await Cart_1.default.find({
+            'items.product': productId,
+            user: { $ne: buyerUserId },
+        }).select('user');
+        const userIds = carts
+            .map((c) => c.user?.toString())
+            .filter((id) => !!id);
+        if (userIds.length === 0)
+            return;
+        await notification_service_1.notificationService.productStockAlert(userIds, productId.toString(), productName, newQuantity);
+    }
+    catch (err) {
+        logger_1.logger.warn('Cart stock alert notification failed (non-critical):', err);
+    }
 }
 class OrderController {
     /**
@@ -751,7 +792,7 @@ class OrderController {
         const tax = 0;
         const baseTotal = subtotal - discount + totalShippingCost + tax;
         const serviceCharge = isDigitalOnly ? 0 : calculateServiceCharge(baseTotal);
-        const total = baseTotal + serviceCharge;
+        const total = Math.round(baseTotal + serviceCharge);
         const orderNumber = (0, helpers_1.generateOrderNumber)();
         logger_1.logger.info('💾 Creating order document...', { orderNumber });
         // Resolve affiliate if a code was passed at checkout
@@ -885,6 +926,7 @@ class OrderController {
                 await Product_1.default.findByIdAndUpdate(item.product, {
                     $inc: { quantity: -item.quantity },
                 });
+                await notifyCartUsersAboutStock(item.product, product.name, product.quantity, item.quantity, req.user.id, product.vendor?.toString() || '', product.lowStockThreshold ?? 10);
             }
         }
         logger_1.logger.info('📊 Product sales & stock updated');
@@ -997,7 +1039,7 @@ class OrderController {
         const tax = 0;
         const baseTotal = subtotal - discount + totalShippingCost + tax;
         const serviceCharge = isDigitalOnly ? 0 : calculateServiceCharge(baseTotal);
-        const total = baseTotal + serviceCharge;
+        const total = Math.round(baseTotal + serviceCharge);
         // Validate and apply VCredits (separate from wallet cash balance)
         let validVCredits = 0;
         if (vCreditsAmount > 0) {
@@ -1056,7 +1098,7 @@ class OrderController {
             try {
                 const paystackResponse = await paystack_service_1.paystackService.initializePayment({
                     email: user.email,
-                    amount: cardChargeAmount * 100,
+                    amount: Math.round(cardChargeAmount * 100),
                     reference: paymentReference,
                     callback_url: `${process.env.FRONTEND_URL}/orders/${paymentReference}/payment-callback`,
                     metadata: {
@@ -1467,6 +1509,7 @@ class OrderController {
                 await Product_1.default.findByIdAndUpdate(item.product, {
                     $inc: { quantity: -item.quantity, totalSales: item.quantity },
                 });
+                await notifyCartUsersAboutStock(item.product, product.name, product.quantity, item.quantity, req.user.id, product.vendor?.toString() || '', product.lowStockThreshold ?? 10);
             }
             else {
                 await Product_1.default.findByIdAndUpdate(item.product, {

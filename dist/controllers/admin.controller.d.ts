@@ -70,6 +70,11 @@ export declare const deleteUser: (req: import("express").Request, res: Response,
  */
 export declare const getAllVendors: (req: import("express").Request, res: Response, next: import("express").NextFunction) => void;
 /**
+ * POST /admin/vendors/fix-commission-rates
+ * One-time migration: set all non-premium vendors with legacy 5% default to 8%
+ */
+export declare const fixLegacyCommissionRates: (req: import("express").Request, res: Response, next: import("express").NextFunction) => void;
+/**
  * GET /admin/vendors/:id
  * Get detailed vendor profile with analytics
  */

@@ -2,6 +2,7 @@ import { Response, NextFunction } from 'express';
 import { AuthRequest, UserRole } from '../types';
 import { verifyAccessToken } from '../utils/jwt';
 import { ApiResponse } from '../types';
+import User from '../models/User';
 
 export const authenticate = async (
   req: AuthRequest,
@@ -14,14 +15,33 @@ export const authenticate = async (
     if (!token) {
       res.status(401).json({
         success: false,
-        message: 'Authentication required',
+        message: 'Please log in to continue',
         error: 'No token provided',
       });
       return;
     }
 
     const decoded = verifyAccessToken(token);
-    
+
+    // Check the user is still active in the DB — catches deleted/suspended accounts
+    const user = await User.findById(decoded.id).select('status').lean();
+    if (!user) {
+      res.status(401).json({
+        success: false,
+        message: 'Account no longer exists',
+        error: 'account_deleted',
+      });
+      return;
+    }
+    if ((user as any).status === 'inactive' || (user as any).status === 'deleted') {
+      res.status(401).json({
+        success: false,
+        message: 'Your account has been deleted. Thank you for using VendorSpot.',
+        error: 'account_deleted',
+      });
+      return;
+    }
+
     req.user = {
       id: decoded.id,
       email: decoded.email,
@@ -43,7 +63,7 @@ export const authorize = (...roles: UserRole[]) => {
     if (!req.user) {
       res.status(401).json({
         success: false,
-        message: 'Authentication required',
+        message: 'Please log in to continue',
       });
       return;
     }

@@ -8,6 +8,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.accountDeletionController = exports.AccountDeletionController = void 0;
+const types_1 = require("../types");
 const AccountDeletionRequest_1 = __importDefault(require("../models/AccountDeletionRequest"));
 const User_1 = __importDefault(require("../models/User"));
 const VendorProfile_1 = __importDefault(require("../models/VendorProfile"));
@@ -15,6 +16,7 @@ const Product_1 = __importDefault(require("../models/Product"));
 const Order_1 = __importDefault(require("../models/Order"));
 const error_1 = require("../middleware/error");
 const logger_1 = require("../utils/logger");
+const notification_service_1 = require("../services/notification.service");
 class AccountDeletionController {
     /**
      * Request account deletion (User)
@@ -40,6 +42,8 @@ class AccountDeletionController {
         }
         const deletionRequest = await AccountDeletionRequest_1.default.create({
             user: userId,
+            userEmail: user.email,
+            userFullName: `${user.firstName} ${user.lastName}`,
             reason,
             additionalDetails,
             userRole: user.role,
@@ -151,10 +155,24 @@ class AccountDeletionController {
             .skip(skip)
             .limit(limit);
         const total = await AccountDeletionRequest_1.default.countDocuments(filter);
+        // Normalize: if user was hard-deleted, fall back to stored userEmail/userFullName
+        const normalized = deletionRequests.map((req) => {
+            const obj = req.toObject ? req.toObject() : { ...req };
+            if (!obj.user) {
+                obj.user = {
+                    _id: null,
+                    firstName: obj.userFullName?.split(' ')[0] || 'Deleted',
+                    lastName: obj.userFullName?.split(' ').slice(1).join(' ') || 'User',
+                    email: obj.userEmail || '(account deleted)',
+                    role: obj.userRole,
+                };
+            }
+            return obj;
+        });
         res.json({
             success: true,
             data: {
-                deletionRequests,
+                deletionRequests: normalized,
             },
             meta: {
                 page,
@@ -210,7 +228,21 @@ class AccountDeletionController {
             });
             // 3. Delete user account
             await User_1.default.findByIdAndDelete(user._id);
-            // 4. Update deletion request
+            // 4. Notify all admins about the deletion
+            const admins = await User_1.default.find({
+                role: { $in: ['admin', 'super_admin', 'financial_admin'] },
+            }).select('_id');
+            const adminIds = admins.map((a) => a._id.toString());
+            if (adminIds.length > 0) {
+                await notification_service_1.notificationService.sendToMany({
+                    userIds: adminIds,
+                    type: types_1.NotificationType.ACCOUNT,
+                    title: 'Account Deleted',
+                    message: `Account for ${user.firstName} ${user.lastName} (${user.email}, ${user.role}) has been permanently deleted.`,
+                    data: { deletedUserEmail: user.email, deletedUserRole: user.role },
+                });
+            }
+            // 5. Update deletion request
             deletionRequest.status = 'approved';
             deletionRequest.processedBy = adminId;
             deletionRequest.processedAt = new Date();

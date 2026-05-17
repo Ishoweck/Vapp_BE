@@ -8,6 +8,7 @@ const Additional_1 = require("../models/Additional");
 const Product_1 = __importDefault(require("../models/Product"));
 const Order_1 = __importDefault(require("../models/Order"));
 const User_1 = __importDefault(require("../models/User"));
+const VendorProfile_1 = __importDefault(require("../models/VendorProfile"));
 const Additional_2 = require("../models/Additional");
 const error_1 = require("../middleware/error");
 const helpers_1 = require("../utils/helpers");
@@ -400,6 +401,35 @@ class AffiliateController {
                 metric,
                 leaderboard: rankedLeaderboard.slice(0, 50), // Top 50
             },
+        });
+    }
+    /**
+     * Get vendors referred by the current affiliate user
+     */
+    async getReferredVendors(req, res) {
+        const user = await User_1.default.findById(req.user?.id);
+        if (!user || !user.isAffiliate) {
+            throw new error_1.AppError('Affiliate account not activated', 403);
+        }
+        const referredVendorProfiles = await VendorProfile_1.default.find({ referredBy: req.user?.id })
+            .populate('user', 'firstName lastName email createdAt')
+            .select('businessName businessLogo verificationStatus referredBy referralRewarded totalSales createdAt user')
+            .sort({ createdAt: -1 });
+        const vendors = referredVendorProfiles.map((vp) => {
+            const u = vp.user;
+            return {
+                vendorId: u?._id,
+                businessName: vp.businessName || (u ? `${u.firstName} ${u.lastName}` : 'Unknown'),
+                businessLogo: vp.businessLogo || null,
+                verificationStatus: vp.verificationStatus,
+                referralRewarded: vp.referralRewarded || false,
+                hasMadeSale: (vp.totalSales || 0) > 0,
+                joinedAt: vp.createdAt,
+            };
+        });
+        res.json({
+            success: true,
+            data: { vendors, total: vendors.length },
         });
     }
 }

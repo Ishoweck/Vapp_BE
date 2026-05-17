@@ -89,7 +89,9 @@ class AuthController {
             await user.save();
         }
         // Send OTP email
-        console.log(otpCode);
+        if (process.env.NODE_ENV !== 'production') {
+            console.log(`\n🔑 [DEV] Registration OTP for ${email}: ${otpCode}\n`);
+        }
         await (0, email_1.sendOTPEmail)(email, otpCode);
         res.status(201).json({
             success: true,
@@ -244,7 +246,9 @@ class AuthController {
         };
         await user.save();
         // Send OTP email
-        console.log(`🔑 Resend OTP for ${email}: ${otpCode}`);
+        if (process.env.NODE_ENV !== 'production') {
+            console.log(`\n🔑 [DEV] Resend OTP for ${email}: ${otpCode}\n`);
+        }
         await (0, email_1.sendOTPEmail)(email, otpCode);
         res.json({
             success: true,
@@ -372,7 +376,17 @@ class AuthController {
                 bonusPoints: streakBonus,
             },
         });
-        // Log the points award
+        // Send notification for the daily login points
+        try {
+            const { notificationService } = await Promise.resolve().then(() => __importStar(require('../services/notification.service')));
+            const reason = streakBonus > 0
+                ? `daily login (${newStreak}-day streak bonus!)`
+                : 'daily login';
+            await notificationService.pointsEarned(user._id.toString(), pointsAwarded, reason);
+        }
+        catch (err) {
+            // Non-critical — don't block login
+        }
         console.log(`✅ Daily login points awarded: ${pointsAwarded} to user ${user.email} (Streak: ${newStreak})`);
         if (streakBonus > 0) {
             console.log(`🎉 Streak bonus: ${streakBonus} points for ${newStreak}-day streak!`);
@@ -400,7 +414,9 @@ class AuthController {
         await user.save();
         // Send reset email with OTP
         await (0, email_1.sendPasswordResetEmail)(email, otpCode);
-        console.log(`🔐 Password reset OTP generated for ${email}: ${otpCode}`);
+        if (process.env.NODE_ENV !== 'production') {
+            console.log(`\n🔐 [DEV] Password reset OTP for ${email}: ${otpCode}\n`);
+        }
         res.json({
             success: true,
             message: 'Password reset code sent to email',
