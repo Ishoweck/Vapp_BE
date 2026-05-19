@@ -21,8 +21,10 @@ export const initializeSocket = (server: http.Server): SocketServer => {
       methods: ['GET', 'POST'],
       credentials: true,
     },
-    pingTimeout: 60000,
-    pingInterval: 25000,
+    // Higher timeouts for mobile networks (MTN/Airtel) — they frequently
+    // drop and re-establish connections; 60s timeout caused false disconnects
+    pingTimeout: 120000,
+    pingInterval: 30000,
   });
 
   // Authentication middleware — verify JWT on connection

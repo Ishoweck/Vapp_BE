@@ -23,6 +23,9 @@ const backup_1 = require("./utils/backup");
 dotenv_1.default.config();
 // Create Express app
 const app = (0, express_1.default)();
+// Trust reverse proxy (Nginx, Railway, Render, Heroku, etc.)
+// Without this, req.ip is always the proxy's IP — all users share one rate-limit bucket
+app.set('trust proxy', 1);
 // Create HTTP server (needed for Socket.io)
 const server = http_1.default.createServer(app);
 // Connect to database
@@ -59,9 +62,13 @@ app.use((0, cors_1.default)({
 // ============================================================
 const limiter = (0, express_rate_limit_1.default)({
     windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'), // 15 minutes
-    max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '200'),
+    // Mobile carriers (MTN, Airtel) use CGNAT — thousands of users share one IP.
+    // 1000 req/15min per IP is still safe while not locking out shared-IP mobile users.
+    max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '1000'),
     message: 'Too many requests from this IP, please try again later.',
     skipSuccessfulRequests: true,
+    // Use the real client IP (requires trust proxy above)
+    keyGenerator: (req) => req.ip || req.socket.remoteAddress || 'unknown',
 });
 app.use('/api', limiter);
 // Compression

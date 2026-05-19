@@ -31,7 +31,7 @@ declare class MessageService {
         };
     }>;
     /**
-     * Get conversations for a user
+     * Get conversations for a user (excludes support/admin conversations)
      */
     getConversations(userId: string, page?: number, limit?: number): Promise<{
         conversations: {

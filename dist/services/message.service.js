@@ -90,23 +90,28 @@ class MessageService {
         };
     }
     /**
-     * Get conversations for a user
+     * Get conversations for a user (excludes support/admin conversations)
      */
     async getConversations(userId, page = 1, limit = 20) {
         const skip = (page - 1) * limit;
-        const conversations = await Conversation_1.default.find({
-            participants: userId,
+        const adminUsers = await User_1.default.find({
+            role: { $in: ['admin', 'super_admin', 'financial_admin'] },
+        }).select('_id');
+        const adminIds = adminUsers.map((u) => u._id);
+        const baseQuery = {
+            $and: [
+                { participants: userId },
+                ...(adminIds.length > 0 ? [{ participants: { $nin: adminIds } }] : []),
+            ],
             isActive: true,
-        })
+        };
+        const conversations = await Conversation_1.default.find(baseQuery)
             .populate('participants', 'firstName lastName avatar role')
             .populate('orderId', 'orderNumber')
             .sort({ updatedAt: -1 })
             .skip(skip)
             .limit(limit);
-        const total = await Conversation_1.default.countDocuments({
-            participants: userId,
-            isActive: true,
-        });
+        const total = await Conversation_1.default.countDocuments(baseQuery);
         // Add the other participant info and unread count for each conversation
         const formattedConversations = conversations.map((conv) => {
             const otherParticipant = conv.participants.find((p) => p._id.toString() !== userId);
