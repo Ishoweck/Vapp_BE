@@ -26,6 +26,7 @@ import ticketRoutes from './ticket.routes';
 import adminRoutes from './admin.routes';
 import auditRoutes from './audit.routes';
 import aiChatRoutes from './ai-chat.routes';
+import contactRoutes from './contact.routes';
 import { getAppVersionConfig } from '../controllers/admin.controller';
 
 
@@ -58,6 +59,7 @@ router.use('/tickets', ticketRoutes);
 router.use('/admin', adminRoutes);
 router.use('/admin/audit-logs', auditRoutes);
 router.use('/ai-chat', aiChatRoutes);
+router.use('/contact', contactRoutes);
 
 
 // Public app version check (no auth required — called by the mobile app on startup)

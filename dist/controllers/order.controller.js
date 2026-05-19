@@ -2509,19 +2509,28 @@ class OrderController {
             if (thisVendorShipment) {
                 thisVendorShipment.status = status;
             }
-            // Derive the overall order status from all vendor shipments
+            // Derive the overall order status from all vendor shipments.
+            // Uses minimum-progress: the order only advances when ALL active vendors reach that stage.
             const allShipmentStatuses = vendorShipmentsList.map((s) => s.status);
-            if (allShipmentStatuses.every(s => s === 'delivered')) {
-                order.status = types_1.OrderStatus.DELIVERED;
-            }
-            else if (allShipmentStatuses.every(s => s === 'cancelled')) {
+            const activeStatuses = allShipmentStatuses.filter(s => s !== 'cancelled');
+            if (allShipmentStatuses.every(s => s === 'cancelled')) {
                 order.status = types_1.OrderStatus.CANCELLED;
             }
-            else if (allShipmentStatuses.some(s => s === 'in_transit' || s === 'shipped')) {
+            else if (activeStatuses.every(s => s === 'delivered')) {
+                // All active vendors delivered (also covers some-cancelled + rest-delivered)
+                order.status = types_1.OrderStatus.DELIVERED;
+            }
+            else if (activeStatuses.every(s => ['in_transit', 'delivered'].includes(s))) {
+                order.status = types_1.OrderStatus.IN_TRANSIT;
+            }
+            else if (activeStatuses.every(s => ['shipped', 'in_transit', 'delivered'].includes(s))) {
                 order.status = types_1.OrderStatus.SHIPPED;
             }
-            else if (allShipmentStatuses.some(s => s === 'processing' || s === 'confirmed')) {
+            else if (activeStatuses.every(s => ['processing', 'shipped', 'in_transit', 'delivered'].includes(s))) {
                 order.status = types_1.OrderStatus.PROCESSING;
+            }
+            else if (activeStatuses.every(s => ['confirmed', 'processing', 'shipped', 'in_transit', 'delivered'].includes(s))) {
+                order.status = types_1.OrderStatus.CONFIRMED;
             }
             else {
                 order.status = types_1.OrderStatus.PENDING;

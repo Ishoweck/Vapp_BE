@@ -10,7 +10,12 @@
       "Bash(npx ts-node:*)",
       "Bash(npx create-next-app@latest vendorspot-website --typescript --tailwind --eslint --app --src-dir --no-import-alias --use-npm)",
       "Bash(npm ls:*)",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(node -e ' *)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\YungFlash\\\\Downloads\\\\vendorspot-backend\\\\src\" -Recurse -Directory)",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\YungFlash\\\\Downloads\\\\vendorspot-backend\" -Recurse -Name)",
+      "Bash(grep -n '$regex\\\\|$ne\\\\|$gt\\\\|$lt\\\\|$in\\\\|req\\\\.query\\\\|req\\\\.body\\\\.filter' 'C:\\\\Users\\\\YungFlash\\\\Downloads\\\\vendorspot-backend\\\\src\\\\controllers\\\\admin.controller.ts')"
     ]
   }
 }

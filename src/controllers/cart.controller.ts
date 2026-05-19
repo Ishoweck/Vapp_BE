@@ -68,6 +68,37 @@ export class CartController {
       throw new AppError('Insufficient stock', 400);
     }
 
+    // Validate size/color selection for products that have them
+    const hasSizes = product.sizes && product.sizes.length > 0;
+    const hasColors = product.colors && product.colors.length > 0;
+
+    if (hasSizes || hasColors) {
+      if (!variant) {
+        const missing = [hasSizes && 'size', hasColors && 'color'].filter(Boolean).join(' and ');
+        throw new AppError(`Please select a ${missing} before adding to cart`, 400);
+      }
+
+      // Parse variant string format: "Size: M, Color: Red"
+      const sizeMatch = variant.match(/Size:\s*([^,]+)/i);
+      const colorMatch = variant.match(/Color:\s*([^,]+)/i);
+
+      if (hasSizes) {
+        if (!sizeMatch) throw new AppError('Size selection is required', 400);
+        const selectedSize = sizeMatch[1].trim();
+        if (!product.sizes!.includes(selectedSize)) {
+          throw new AppError(`Invalid size "${selectedSize}". Available: ${product.sizes!.join(', ')}`, 400);
+        }
+      }
+
+      if (hasColors) {
+        if (!colorMatch) throw new AppError('Color selection is required', 400);
+        const selectedColor = colorMatch[1].trim();
+        if (!product.colors!.includes(selectedColor)) {
+          throw new AppError(`Invalid color "${selectedColor}". Available: ${product.colors!.join(', ')}`, 400);
+        }
+      }
+    }
+
     // Get or create cart
     let cart = await Cart.findOne({ user: req.user?.id });
     if (!cart) {
